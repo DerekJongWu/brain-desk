@@ -28,6 +28,12 @@ the app running in the dock, so the Chrome button keeps working. Quit with ⌘Q.
 - **Inbound**: a drag-and-drop board (New → Pursuing → Reached out → Passed),
   plus a drawer per company for status, deal sheet, touches, and
   *Start outreach* to the founder.
+- **Deal sheet**: companies queued for the next sheet (`deal_sheet: yes`), from
+  both Inbound and Companies. They're grouped into live deals (raising) and
+  market intel, and missing descriptions are flagged. Add a company from the
+  picker, remove one, or re-share one that was already sent. Past sheets come
+  from `Deal Sheets/`. Compiling the sheet is still the vault's R4 routine: ask
+  Claude for a deal sheet.
 - **Quick add** (`N`): add an inbound company (checked for duplicates across
   Inbound and Companies by name, aliases and website), add a person, or log a
   reply.

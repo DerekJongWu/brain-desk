@@ -80,6 +80,18 @@ const hook = file => {
   A.logSent(so.id, { text: 'Intro email' });
   assert.equal(A.vault.load().inbound.find(x => x.id === ib.id).status, 'reached-out', 'sending flips inbound to reached-out');
 
+  // deal sheet on a Companies note, and re-sharing a sent one
+  const co2 = A.vault.load().companies.find(c => !c.deal_sheet);
+  A.setDealSheet(co2.id, true);
+  assert.equal(A.vault.load().companies.find(c => c.id === co2.id).deal_sheet, 'yes');
+  A.setDealSheet(co2.id, false);
+  assert.equal(A.vault.load().companies.find(c => c.id === co2.id).deal_sheet, '');
+  A.vault.updateInbound(ib.id, { deal_sheet: 'sent' });
+  A.setDealSheet(ib.id, 'yes');
+  assert.equal(A.vault.load().inbound.find(x => x.id === ib.id).deal_sheet, 'yes', 're-share');
+  assert(Array.isArray(A.vault.load().dealSheets));
+  touched.add(co2.id);
+
   // company site lookup
   assert.equal(A.lookup({ url: 'https://quokka-data.example/', siteName: 'Quokka' }).kind, 'company');
   assert.equal(A.lookup({ url: 'https://brand-new.example/', siteName: 'Brand New' }).kind, 'new-company');

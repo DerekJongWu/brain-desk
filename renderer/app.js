@@ -24,6 +24,7 @@ let S = null, INIT = null;
 let view = 'today', fSel = null, fTab = 'move', peopleCat = 'all', peopleQ = '', boardQ = '';
 let ui = { mode: null, text: '', instructions: '', err: '' };
 let openDrawer = null;
+let sheetQ = '', sheetPick = false;
 
 const T = () => S.today;
 const draftOf = p => S.drafts[p.id];
@@ -49,6 +50,7 @@ function pPill(p) {
   if (s === 'closed') return `<span class="pill grey">No follow-up</span>`;
   return `<span class="pill grey">Not tracking</span>`;
 }
+const stat = (v, k, c, to) => `<button class="stat" data-go="${to}"><span class="v">${v}</span><span class="k"><i style="background:${c}"></i>${k}</span></button>`;
 const statusPill = s => `<span class="pill ${esc(s)}">${esc(STATUS_LABEL[s] || s)}</span>`;
 const byId = id => S.people.find(p => p.id === id);
 const inboundById = id => S.inbound.find(c => c.id === id);
@@ -87,7 +89,7 @@ function setGit(st) {
 function go(v) {
   view = v; ui = { mode: null, text: '', instructions: '', err: '' };
   document.querySelectorAll('#nav button').forEach(b => b.setAttribute('aria-current', b.dataset.view === v ? 'page' : 'false'));
-  $('viewTitle').textContent = { today: 'Today', follow: 'Follow-ups', inbound: 'Inbound', people: 'People' }[v];
+  $('viewTitle').textContent = { today: 'Today', follow: 'Follow-ups', inbound: 'Inbound', sheet: 'Deal sheet', people: 'People' }[v];
   render();
   $('view').scrollTop = 0;
 }
@@ -97,13 +99,14 @@ function setBadges() {
   $('b-follow').textContent = S.people.filter(p => ['drafted', 'owe', 'due', 'wait'].includes(pState(p))).length || '';
   $('b-inbound').textContent = S.inbound.filter(c => c.status === 'new').length || '';
   $('b-people').textContent = S.people.length;
+  $('b-sheet').textContent = sheetRecs().filter(c => c.deal_sheet === 'yes').length || '';
 }
 function render() {
   if (!S) return;
   setBadges();
   const scroll = $('view').scrollTop;
   const listScroll = document.querySelector('.split > .card')?.scrollTop;
-  $('view').innerHTML = ({ today: vToday, follow: vFollow, inbound: vInbound, people: vPeople })[view]();
+  $('view').innerHTML = ({ today: vToday, follow: vFollow, inbound: vInbound, sheet: vSheet, people: vPeople })[view]();
   $('view').scrollTop = scroll;
   if (listScroll !== undefined && document.querySelector('.split > .card')) document.querySelector('.split > .card').scrollTop = listScroll;
   if (view === 'inbound') wireBoard();
@@ -134,7 +137,6 @@ function vToday() {
   const raising = S.inbound.filter(c => c.round_status === 'raising' && !['passed', 'no-reply'].includes(c.status));
   const hour = new Date().getHours();
   const greet = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
-  const stat = (v, k, c, to) => `<button class="stat" data-go="${to}"><span class="v">${v}</span><span class="k"><i style="background:${c}"></i>${k}</span></button>`;
   const bits = [];
   if (due.length) bits.push(`${due.length} follow-up${due.length === 1 ? '' : 's'} due`);
   if (owe.length) bits.push(`${owe.length} waiting on your reply`);
@@ -319,6 +321,61 @@ async function setStatus(id, status) {
   if (status === 'pursuing') { openDrawer = id; renderDrawer(); }
 }
 
+// ---------- Deal sheet ----------
+// Inbound and Companies notes together; deal_sheet is yes (queued) or sent.
+const sheetRecs = () => [...S.inbound.map(c => ({ ...c, src: 'inbound' })), ...S.companies.map(c => ({ ...c, src: 'company' }))];
+function roundBits(c) {
+  const bits = [];
+  if (c.round_status === 'raising') bits.push(`<span class="pill raising">Raising${c.raise ? ' ' + esc(c.raise) : ''}</span>`);
+  else if (c.raise) bits.push(`<span class="tag">${esc(c.raise)}</span>`);
+  const more = [c.valuation && `${esc(c.valuation)} val`, c.lead && `lead ${esc(c.lead)}`].filter(Boolean).join(' · ');
+  if (more) bits.push(`<span class="small">${more}</span>`);
+  return bits.join('') || '<span class="small">No round info</span>';
+}
+function srow(c, actions) {
+  const open = c.src === 'inbound' ? `data-company="${esc(c.id)}"` : `data-note="${esc(c.id)}"`;
+  return `<div class="srow"><div><div class="n" ${open}>${esc(c.name)}</div><div class="src">${c.src === 'inbound' ? 'Inbound · ' + esc(STATUS_LABEL[c.status] || c.status) : 'Companies' + (c.status ? ' · ' + esc(c.status) : '')}</div></div>
+    <div class="ds ${c.description ? '' : 'missing'}">${c.description ? esc(c.description) : 'No description yet: the sheet uses it'}</div>
+    <div class="rd">${roundBits(c)}</div><div class="act">${actions}</div></div>`;
+}
+function vSheet() {
+  const all = sheetRecs();
+  const queued = all.filter(c => c.deal_sheet === 'yes').sort((a, b) => a.name.localeCompare(b.name));
+  const live = queued.filter(c => c.round_status === 'raising'), intel = queued.filter(c => c.round_status !== 'raising');
+  const sent = all.filter(c => c.deal_sheet === 'sent').sort((a, b) => (b.last_touch || '').localeCompare(a.last_touch || ''));
+  const noDesc = queued.filter(c => !c.description).length;
+  const q = sheetQ.toLowerCase();
+  const picks = sheetPick ? all.filter(c => c.deal_sheet !== 'yes' && (!q || [c.name, c.description, c.website].join(' ').toLowerCase().includes(q)))
+    .sort((a, b) => (b.round_status === 'raising') - (a.round_status === 'raising') || (b.last_touch || '').localeCompare(a.last_touch || '')).slice(0, 30) : [];
+  const rm = c => `<button class="btn sm ghost" data-sheet-off="${esc(c.id)}" title="Take it off the next sheet">Remove</button>`;
+  return `<div class="sheet-wrap">
+    <div class="toolbar">
+      <span class="sheet-intro">Companies queued for the next deal sheet you send to VC friends. To send one, ask Claude to compile a deal sheet in the vault: it writes the sheet and marks these as sent.</span>
+      <div class="sheet-add" style="margin-left:auto">
+        <input class="in" id="sheetQ" placeholder="＋ Add a company to the sheet" value="${esc(sheetQ)}" style="width:260px" autocomplete="off">
+        ${sheetPick ? `<div class="picks">${picks.map(c => `<button data-sheet-on="${esc(c.id)}"><span>${esc(c.name)}</span><span class="small">${c.round_status === 'raising' ? 'Raising · ' : ''}${c.src === 'inbound' ? 'Inbound' : 'Companies'}${c.deal_sheet === 'sent' ? ' · sent before' : ''}</span></button>`).join('') || '<div class="small" style="padding:8px 10px">No matches.</div>'}</div>` : ''}
+      </div>
+    </div>
+    <div class="stats">
+      ${stat(queued.length, 'Queued for next sheet', 'var(--wait)', 'sheet')}
+      ${stat(live.length, 'Raising now', 'var(--due)', 'sheet')}
+      ${stat(noDesc, 'Missing a description', 'var(--pursue)', 'sheet')}
+      ${stat(S.dealSheets.length, 'Sheets sent', 'var(--pass)', 'sheet')}
+    </div>
+    <div class="card">
+      <div class="card-h"><h2>Next sheet</h2><span class="sub">grouped by round status; Claude makes the final call on sections when it compiles</span></div>
+      ${queued.length ? `${live.length ? `<div class="sgroup">Live deals · ${live.length}</div>${live.map(c => srow(c, rm(c))).join('')}` : ''}
+        ${intel.length ? `<div class="sgroup">Market intel / other · ${intel.length}</div>${intel.map(c => srow(c, rm(c))).join('')}` : ''}`
+        : '<div class="empty">Nothing queued. Add a company above, or tick "Deal sheet" on an Inbound card.</div>'}
+    </div>
+    <div class="card">
+      <div class="card-h"><h2>Already shared</h2><span class="sub">re-queue one after news</span></div>
+      ${sent.length ? sent.map(c => srow(c, `<button class="btn sm" data-sheet-on="${esc(c.id)}">Re-share</button>`)).join('') : '<div class="empty">Nothing sent yet.</div>'}
+    </div>
+    ${S.dealSheets.length ? `<div class="card"><div class="card-h"><h2>Past sheets</h2></div><ul class="rowlist">${S.dealSheets.map(d => `<li class="prow" data-note="${esc(d.id)}"><div class="who"><div class="n">${esc(d.name)}</div><div class="c">${d.companies} companies${d.recipients ? ' · to ' + esc(d.recipients) : ''}</div></div><span class="small">${fmt(d.date)}</span></li>`).join('')}</ul></div>` : ''}
+  </div>`;
+}
+
 // ---------- People ----------
 function vPeople() {
   const q = peopleQ.toLowerCase();
@@ -493,6 +550,10 @@ function selectPerson(id) {
 async function onViewClick(e) {
   const t = e.target;
   const g = t.closest('[data-go]'); if (g) return go(g.dataset.go);
+  const son = t.closest('[data-sheet-on]');
+  if (son) { const c = sheetRecs().find(x => x.id === son.dataset.sheetOn); await call('setDealSheet', son.dataset.sheetOn, true); sheetPick = false; sheetQ = ''; await refresh(); return toast(`${c ? c.name : 'Company'} queued for the deal sheet`); }
+  const soff = t.closest('[data-sheet-off]');
+  if (soff) { const c = sheetRecs().find(x => x.id === soff.dataset.sheetOff); await call('setDealSheet', soff.dataset.sheetOff, false); await refresh(); return toast(`${c ? c.name : 'Company'} removed from the deal sheet`); }
   const ft = t.closest('[data-ftab]'); if (ft) { fTab = ft.dataset.ftab; fSel = null; ui.mode = null; return render(); }
   const pc = t.closest('[data-pcat]'); if (pc) { peopleCat = pc.dataset.pcat; return render(); }
   const nt = t.closest('[data-note]'); if (nt) return api.openNote(nt.dataset.note);
@@ -584,6 +645,7 @@ function wire() {
   $('view').addEventListener('input', e => {
     if (e.target.id === 'draftBox') ui.text = e.target.value;
     if (e.target.id === 'instr') ui.instructions = e.target.value;
+    if (e.target.id === 'sheetQ') { sheetQ = e.target.value; sheetPick = true; const pos = e.target.selectionStart; render(); const n = $('sheetQ'); n.focus(); n.setSelectionRange(pos, pos); }
     if (e.target.id === 'peopleQ') { peopleQ = e.target.value; const pos = e.target.selectionStart; render(); const n = $('peopleQ'); n.focus(); n.setSelectionRange(pos, pos); }
   });
   $('view').addEventListener('keydown', e => {
@@ -605,6 +667,8 @@ function wire() {
     else if (b.dataset.snote) api.openNote(b.dataset.snote);
   });
   document.addEventListener('click', e => { if (!e.target.closest('.search')) $('results').hidden = true; });
+  $('view').addEventListener('focusin', e => { if (e.target.id === 'sheetQ' && !sheetPick) { sheetPick = true; render(); const n = $('sheetQ'); n.focus(); } });
+  document.addEventListener('mousedown', e => { if (sheetPick && view === 'sheet' && !e.target.closest('.sheet-add')) { sheetPick = false; sheetQ = ''; render(); } });
   document.addEventListener('keydown', e => {
     const typing = /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName);
     if (e.key === 'Escape' && $('layer').innerHTML) closeLayer();
