@@ -35,7 +35,11 @@ function scrape() {
   if (/linkedin\.com$/.test(location.hostname)) {
     if (location.pathname.startsWith('/in/')) {
       out.name = txt(document.querySelector('main h1, h1'));
-      out.headline = txt(document.querySelector('main .text-body-medium.break-words, .pv-text-details__left-panel .text-body-medium'));
+      const h1 = document.querySelector('main h1');
+      const top = h1 && (h1.closest('section') || h1.parentElement?.parentElement?.parentElement);
+      out.headline = txt(document.querySelector('main .text-body-medium.break-words, .pv-text-details__left-panel .text-body-medium'))
+        || txt(top && top.querySelector('.text-body-medium, [data-generated-suggestion-target]'))
+        || (meta('og:title').split(/\s[-–|]\s/)[1] || '').trim();
     } else if (location.pathname.startsWith('/messaging')) {
       const head = document.querySelector('.msg-thread__link-to-profile, .msg-entity-lockup__entity-title, .msg-overlay-bubble-header__title');
       out.name = txt(document.querySelector('.msg-entity-lockup__entity-title') || head);
@@ -176,33 +180,58 @@ function composer(p, page, draft) {
   (draft ? $('text') : $('ins')).focus();
 }
 
+// Match what's typed in the company box against the vault (name or alias),
+// and catch near-misses like "Reinfiorce Labs".
+const nn = s => String(s || '').toLowerCase().replace(/\(.*?\)/g, '').replace(/\b(inc|llc|ltd|corp|co|labs?|ai|hq|technologies|technology)\b\.?/g, '').replace(/[^a-z0-9]/g, '');
+function lev(a, b) {
+  const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+  for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++) d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+  return d[a.length][b.length];
+}
+function matchCo(list, typed) {
+  const n = nn(typed);
+  if (!n) return {};
+  const exact = list.find(c => nn(c.name) === n || (c.aliases || []).some(a => nn(a) === n));
+  if (exact) return { exact };
+  let near = null, best = 99;
+  for (const c of list) { const k = nn(c.name); if (!k) continue; const d = k.startsWith(n) && n.length >= 4 ? 0.5 : lev(k, n); if (d < best) { best = d; near = c; } }
+  return best <= Math.max(1, Math.floor(n.length / 4)) ? { near } : {};
+}
+const STATUS_TXT = { new: 'New', pursuing: 'Pursuing', 'reached-out': 'Reached out', passed: 'Passed', 'no-reply': 'No reply' };
+
 // ---------- someone new: add them (and their company to Inbound), then draft ----------
 function guessCategory(g) {
   return /(founder|ceo|cto)/i.test(g.role) ? 'founder' : /(partner|principal|ventures|capital)/i.test(g.role + g.company) ? 'vc' : 'other';
 }
-function newPersonView({ guess, company }, page, mode = 'reach') {
+function newPersonView({ guess, company, companies = [] }, page, mode = 'reach') {
   $('kind').textContent = 'LinkedIn profile';
   const cat = $('cat') ? $('cat').value : guessCategory(guess);
   main.innerHTML = `<div class="muted">Not in your vault yet.</div>
     <div class="seg"><button data-mode="reach" aria-pressed="${mode === 'reach'}">I want to reach out</button><button data-mode="sent" aria-pressed="${mode === 'sent'}">Already messaged</button></div>
-    <div class="two"><label>Name<input id="name" value="${esc(guess.name)}"></label><label>Company<input id="co" value="${esc(guess.company)}"></label></div>
+    <div class="two"><label>Name<input id="name" value="${esc(guess.name)}"></label><label>Company<input id="co" list="coList" autocomplete="off" value="${esc(guess.company)}" placeholder="Start typing…"></label></div>
+    <datalist id="coList">${companies.map(c => `<option value="${esc(c.name)}">${c.kind === 'inbound' ? 'Inbound · ' + esc(STATUS_TXT[c.status] || c.status) : 'Companies'}</option>`).join('')}</datalist>
     <label>Role<input id="role" value="${esc(guess.role)}"></label>
     ${mode === 'sent' ? '<label>What you sent (one line)<textarea id="note" placeholder="e.g. Cold intro re: their launch, asked for 20 min"></textarea></label>' : ''}
     <div class="two"><label>Category<select id="cat">${CATS.map(([k, l]) => `<option value="${k}" ${k === cat ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
     <label>Follow up every<select id="days">${dayOpts(7)}</select></label></div>
     <div id="coLine"></div>
     <button class="li" id="go">${mode === 'reach' ? 'Add & draft a message' : 'Log message'}</button>`;
-  main.querySelectorAll('[data-mode]').forEach(b => { b.onclick = () => newPersonView({ guess: { ...guess, name: v('name'), company: v('co'), role: v('role') }, company }, page, b.dataset.mode); });
+  main.querySelectorAll('[data-mode]').forEach(b => { b.onclick = () => newPersonView({ guess: { ...guess, name: v('name'), company: v('co'), role: v('role') }, company, companies }, page, b.dataset.mode); });
   const as = mode === 'reach' ? 'Pursuing' : 'Reached out';
   const coLine = () => {
     const co = v('co');
-    const known = company && co.toLowerCase() === (guess.company || '').toLowerCase() ? company : null;
+    const { exact, near } = matchCo(companies, co);
     const on = $('cat').value === 'founder' ? 'checked' : '';
-    if (known && known.kind === 'company') $('coLine').innerHTML = `<div class="muted">${esc(known.name)} is already in Companies.</div>`;
-    else if (known) $('coLine').innerHTML = mode === 'reach'
-      ? `<label class="check"><input type="checkbox" id="addCo" ${on}> Add ${esc(v('name') || 'them')} to ${esc(known.name)}'s team in Inbound (${esc(known.status)})</label>`
-      : `<div class="muted">${esc(known.name)} is in Inbound (${esc(known.status)}); it moves to Reached out.</div>`;
-    else $('coLine').innerHTML = co ? `<label class="check"><input type="checkbox" id="addCo" ${on}> Add ${esc(co)} to Inbound as ${as}</label>` : '';
+    const who = esc(v('name') || 'them');
+    if (exact && exact.kind === 'company') $('coLine').innerHTML = `<div class="ok">✓ Matches ${esc(exact.name)} in Companies.</div>`;
+    else if (exact) $('coLine').innerHTML = mode === 'reach'
+      ? `<label class="check"><input type="checkbox" id="addCo" checked> ✓ Add ${who} to ${esc(exact.name)}'s team in Inbound (${esc(STATUS_TXT[exact.status] || exact.status)})</label>`
+      : `<div class="ok">✓ Matches ${esc(exact.name)} in Inbound (${esc(STATUS_TXT[exact.status] || exact.status)}). ${who} goes on its team${['new', 'pursuing'].includes(exact.status) ? ' and it moves to Reached out' : ''}.</div>`;
+    else if (near) $('coLine').innerHTML = `<div class="warn">Not in your vault. Did you mean <button class="link" id="fixCo">${esc(near.name)}</button>?</div>
+      <label class="check"><input type="checkbox" id="addCo"> No, add ${esc(co)} to Inbound as ${as}</label>`;
+    else $('coLine').innerHTML = co ? `<label class="check"><input type="checkbox" id="addCo" ${on}> Not in your vault: add ${esc(co)} to Inbound as ${as}</label>` : '';
+    if ($('fixCo')) $('fixCo').onclick = () => { $('co').value = near.name; coLine(); };
   };
   $('co').addEventListener('input', coLine); $('cat').addEventListener('change', coLine); coLine();
   const body = () => ({ name: v('name'), role: v('role'), company: v('co'), linkedin: guess.linkedin || page.profileUrl || page.url,

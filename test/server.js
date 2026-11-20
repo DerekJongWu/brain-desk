@@ -87,8 +87,20 @@ const req = (p, body, origin) => fetch(`http://127.0.0.1:${PORT}${p}`, { method:
     await req('/add-inbound', { name: nw.name, how: 'Outbound', note: 'want to reach out', setStatus: 'pursuing' }, ext);
     assert.match(fs.readFileSync(path.join(vault, nw.id), 'utf8'), /^status: pursuing$/m);
   }
+  // "Already messaged" someone whose company is already in Inbound (any status): linked on its note
+  const ro = A.vault.load().inbound.find(c => c.status === 'reached-out' || c.status === 'passed');
+  r = await req('/lookup', { url: 'https://www.linkedin.com/in/lee-link/', name: 'Lee Link', headline: '' }, ext);
+  assert(r.j.companies.length > 50 && r.j.companies.some(c => c.name === ro.name), 'lookup lists vault companies');
+  r = await req('/log-person', { name: 'Lee Link', role: 'Founder', company: ro.name, linkedin: 'https://www.linkedin.com/in/lee-link/', category: 'founder', note: 'Hi Lee', days: 7, addCompany: false }, ext);
+  assert.equal(r.status, 200, JSON.stringify(r.j));
+  const rot = fs.readFileSync(path.join(vault, ro.id), 'utf8');
+  assert.match(rot, /Founder: \[\[Lee Link\]\]/); assert.match(rot, /Derek: messaged \[\[Lee Link\]\] on LinkedIn/);
+  assert.match(rot, new RegExp('^status: ' + ro.status + '$', 'm'), 'status only flips from new/pursuing');
+  assert(A.vault.load().inbound.find(c => c.id === ro.id).team.some(m => m.name === 'Lee Link'), 'drawer sees the wikilinked name');
+  const leeTxt = fs.readFileSync(path.join(vault, 'People/Lee Link.md'), 'utf8');
+  assert.match(leeTxt, /^relationship: Outbound \(LinkedIn\)$/m); assert.match(leeTxt, /- \d{4}-\d{2}-\d{2}, out · linkedin: Hi Lee\n\n---/, 'blank line before divider');
   const hook = path.join(SRC, '.claude/hooks/check-vocab.sh');
-  for (const f of ['Inbound/Tidewater Labs.md', 'Inbound/Quiet Harbor.md', sam.id, ...(newOne ? [newOne.id] : [])]) {
+  for (const f of [ro.id, 'People/Lee Link.md', 'Inbound/Tidewater Labs.md', 'Inbound/Quiet Harbor.md', sam.id, ...(newOne ? [newOne.id] : [])]) {
     const out = require('child_process').spawnSync('bash', [hook], { input: JSON.stringify({ tool_input: { file_path: path.join(vault, f) } }), encoding: 'utf8' });
     assert.equal(out.status, 0, f + ' fails vocab hook: ' + out.stderr);
   }

@@ -51,6 +51,12 @@ One-time setup: go to `chrome://extensions`, turn on **Developer mode**, click
   *Pursuing*, or adds them to the team if the company is already in Inbound.
   It then opens the draft tab. **Already messaged** logs a message you've
   already sent instead.
+- **The company box** suggests companies from your vault as you type. It shows
+  what it matched (or *Did you mean …?* for a near-miss), so a typo can't
+  quietly create an unlinked company. When you log a message to someone whose
+  company is in Inbound, they're added to its Team as a `[[link]]` to their
+  People page, with a touch line. The status moves to Reached out if it was New
+  or Pursuing.
 - **On the profile of someone already in the vault**, it opens on drafting and
   logging:
   - **Draft**: Claude drafts in your voice. **Copy & save draft** keeps it as
