@@ -23,7 +23,8 @@ function updateBadge() {
   if (!actions || !app.dock) return;
   try {
     const s = actions.snapshot();
-    const n = s.people.filter(p => s.drafts[p.id] || p.owe || (p.next && p.next <= s.today)).length;
+    const n = s.people.filter(p => s.drafts[p.id] || p.owe || (p.next && p.next <= s.today)).length
+      + s.inbound.filter(c => c.reach_out_on && c.reach_out_on <= s.today && c.status !== 'reached-out').length;
     app.dock.setBadge(n ? String(n) : '');
   } catch (_) { /* vault mid-write */ }
 }
@@ -66,7 +67,7 @@ function openExternal(url) {
 
 // Actions the window may call. Anything else is refused.
 const ALLOWED = ['draft', 'saveDraft', 'discardDraft', 'logSent', 'logReply', 'snooze', 'closeOut', 'setupOutreach',
-  'addPerson', 'addInbound', 'setInboundStatus', 'setDealSheet', 'addTouch', 'startOutreach'];
+  'addPerson', 'addInbound', 'setInboundStatus', 'setDealSheet', 'setReachOut', 'addTouch', 'startOutreach'];
 
 ipcMain.handle('init', async () => {
   const cfg = readConfig();

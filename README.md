@@ -27,7 +27,9 @@ the app running in the dock, so the Chrome button keeps working. Quit with ⌘Q.
   *Drafted, not sent*. Confirm with the Chrome button once you've sent it.
 - **Inbound**: a drag-and-drop board (New → Pursuing → Reached out → Passed),
   plus a drawer per company for status, deal sheet, touches, and
-  *Start outreach* to the founder.
+  *Start outreach* to the founder. **Reach out on** sets a date for a company
+  you're tracking for later (`reach_out_on`). It shows on Today once the date
+  arrives, and clears when the company moves to *Reached out*.
 - **Deal sheet**: companies queued for the next sheet (`deal_sheet: yes`), from
   both Inbound and Companies. They're grouped into live deals (raising) and
   market intel, and missing descriptions are flagged. Add a company from the

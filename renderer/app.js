@@ -52,6 +52,16 @@ function pPill(p) {
 }
 const stat = (v, k, c, to) => `<button class="stat" data-go="${to}"><span class="v">${v}</span><span class="k"><i style="background:${c}"></i>${k}</span></button>`;
 const statusPill = s => `<span class="pill ${esc(s)}">${esc(STATUS_LABEL[s] || s)}</span>`;
+// a company Derek wants to reach out to on a set date (cleared once it's reached out)
+const reachSet = c => c.reach_out_on && c.status !== 'reached-out';
+const reachDue = c => reachSet(c) && c.reach_out_on <= T();
+function reachPill(c) {
+  if (!reachSet(c)) return '';
+  const d = diff(T(), c.reach_out_on);
+  if (d > 0) return `<span class="pill due">Reach out · ${d}d overdue</span>`;
+  if (d === 0) return '<span class="pill due">Reach out today</span>';
+  return `<span class="pill wait">Reach out ${fmt(c.reach_out_on)}</span>`;
+}
 const byId = id => S.people.find(p => p.id === id);
 const inboundById = id => S.inbound.find(c => c.id === id);
 function companyMatch(name, website) {
@@ -95,7 +105,7 @@ function go(v) {
 }
 function setBadges() {
   const move = S.people.filter(p => ['drafted', 'owe', 'due'].includes(pState(p))).length;
-  $('b-today').textContent = move || '';
+  $('b-today').textContent = (move + S.inbound.filter(reachDue).length) || '';
   $('b-follow').textContent = S.people.filter(p => ['drafted', 'owe', 'due', 'wait'].includes(pState(p))).length || '';
   $('b-inbound').textContent = S.inbound.filter(c => c.status === 'new').length || '';
   $('b-people').textContent = S.people.length;
@@ -124,7 +134,7 @@ function prow(p, current) {
 function irow(c) {
   return `<li class="prow" data-company="${esc(c.id)}" tabindex="0">${av(c.name)}
     <div class="who"><div class="n">${esc(c.name)}</div><div class="c">${c.description ? esc(c.description) : '<i>No description yet</i>'}</div></div>
-    <div class="r">${c.round_status ? `<span class="pill ${esc(c.round_status)}">${c.round_status === 'raising' ? 'Raising' + (c.raise ? ' ' + esc(c.raise) : '') : 'Tracking'}</span>` : ''}<span class="small">${esc(c.referred_by || 'Direct')} · ${fmt(c.first_seen)}</span></div></li>`;
+    <div class="r">${reachSet(c) ? reachPill(c) : c.round_status ? `<span class="pill ${esc(c.round_status)}">${c.round_status === 'raising' ? 'Raising' + (c.raise ? ' ' + esc(c.raise) : '') : 'Tracking'}</span>` : ''}<span class="small">${esc(c.referred_by || 'Direct')} · ${fmt(c.first_seen)}</span></div></li>`;
 }
 
 // ---------- Today ----------
@@ -135,12 +145,15 @@ function vToday() {
   // newest added first: first_seen is a date, so same-day ties go to when the note was created
   const nw = S.inbound.filter(c => c.status === 'new').sort((a, b) => (b.first_seen || '').localeCompare(a.first_seen || '') || (b.added || 0) - (a.added || 0));
   const raising = S.inbound.filter(c => c.round_status === 'raising' && !['passed', 'no-reply'].includes(c.status));
+  const reachNow = S.inbound.filter(reachDue).sort((a, b) => a.reach_out_on.localeCompare(b.reach_out_on));
+  const reachSoon = S.inbound.filter(c => reachSet(c) && !reachDue(c) && diff(c.reach_out_on, T()) <= 30).sort((a, b) => a.reach_out_on.localeCompare(b.reach_out_on));
   const hour = new Date().getHours();
   const greet = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
   const bits = [];
   if (due.length) bits.push(`${due.length} follow-up${due.length === 1 ? '' : 's'} due`);
   if (owe.length) bits.push(`${owe.length} waiting on your reply`);
   if (drafted.length) bits.push(`${drafted.length} drafted but not sent`);
+  if (reachNow.length) bits.push(`${reachNow.length} compan${reachNow.length > 1 ? 'ies' : 'y'} to reach out to`);
   if (nw.length) bits.push(`${nw.length} new inbound to triage`);
   return `
   <div class="hello"><h2>${greet}, Derek</h2><p>${bits.length ? bits.join(', ') + '.' : 'Nothing waiting on you.'}</p></div>
@@ -156,6 +169,10 @@ function vToday() {
       <ul class="rowlist">${[...drafted, ...owe, ...due].map(p => prow(p)).join('') || '<li class="empty">Nothing due. Add someone with Quick add (N) to start tracking.</li>'}</ul>
     </div>
     <div style="display:grid;gap:18px;min-width:0">
+      ${reachNow.length || reachSoon.length ? `<div class="card">
+        <div class="card-h"><h2>Companies to reach out to</h2><span class="sub">dates you set on Inbound notes</span></div>
+        <ul class="rowlist">${[...reachNow, ...reachSoon].map(irow).join('')}</ul>
+      </div>` : ''}
       <div class="card">
         <div class="card-h"><h2>New inbound</h2><button class="btn sm ghost" data-go="inbound">Open board →</button></div>
         <ul class="rowlist">${nw.slice(0, 8).map(irow).join('') || '<li class="empty">Inbound is clear.</li>'}</ul>
@@ -293,6 +310,7 @@ function card(c) {
     <div class="top"><div style="min-width:0"><div class="nm">${esc(c.name)}</div><div class="dm">${esc(bareDomain(c.website) || '')}</div></div>${c.round_status ? `<span class="pill ${esc(c.round_status)}">${c.round_status === 'raising' ? 'Raising' : 'Tracking'}</span>` : ''}</div>
     <div class="ds ${c.description ? '' : 'missing'}">${c.description ? esc(c.description) : 'No description yet'}</div>
     ${c.raise || c.themes.length || c.deal_sheet ? `<div class="bot">${c.raise ? `<span class="tag">${esc(c.raise)}</span>` : ''}${c.themes.map(t => `<span class="tag">${esc(t)}</span>`).join('')}${c.deal_sheet === 'yes' ? '<span class="sheet-flag">● deal sheet</span>' : c.deal_sheet === 'sent' ? '<span class="small">sheet sent</span>' : ''}</div>` : ''}
+    ${reachSet(c) ? `<div class="bot">${reachPill(c)}</div>` : ''}
     <div class="ref">${esc(c.referred_by || 'Direct')} · ${fmt(c.last_touch)}${c.status === 'no-reply' ? ' · no reply' : ''}</div></div>`;
 }
 function wireBoard() {
@@ -312,6 +330,12 @@ function wireBoard() {
   });
   const q = $('boardQ');
   if (q) q.addEventListener('input', () => { boardQ = q.value; const pos = q.selectionStart; render(); const n = $('boardQ'); n.focus(); n.setSelectionRange(pos, pos); });
+}
+async function setReach(id, date) {
+  const c = inboundById(id);
+  await call('setReachOut', id, date);
+  await refresh();
+  toast(date ? `Reach out to ${c.name} on ${fmt(date)}` : 'Reach-out date cleared');
 }
 async function setStatus(id, status) {
   const c = inboundById(id);
@@ -408,6 +432,10 @@ function renderDrawer() {
         <dt>Themes</dt><dd>${c.themes.map(t => `<span class="tag">${esc(t)}</span>`).join(' ') || '—'}</dd>
         <dt>Deck</dt><dd>${c.deck_link ? `<button class="btn sm ghost" style="padding:0" data-url="${esc(c.deck_link)}">${esc(c.deck_link)}</button>` : '—'}</dd>
         <dt>First seen</dt><dd>${fmt(c.first_seen)} · last touch ${fmt(c.last_touch)}</dd>
+        <dt>Reach out on</dt><dd class="reach"><input type="date" class="in" id="reachIn" value="${esc(c.reach_out_on || '')}">
+          ${[['2w', 14], ['1m', 30], ['3m', 91], ['6m', 182]].map(([l, n]) => `<button class="btn sm ghost" data-reach="${addDays(T(), n)}" title="${fmt(addDays(T(), n))}">${l}</button>`).join('')}
+          ${c.reach_out_on ? '<button class="btn sm ghost" data-reach="">Clear</button>' : ''}
+          ${c.status === 'reached-out' ? '' : reachPill(c)}</dd>
         <dt>Deal sheet</dt><dd>${c.deal_sheet === 'sent' ? 'Sent' : `<label class="check"><input type="checkbox" id="sheetBox" ${c.deal_sheet === 'yes' ? 'checked' : ''}> Queue for the next sheet</label>`}</dd>
       </dl>
       <div><p class="label">Team</p>${people.length ? people.map(({ m, p }, i) => `<div class="prow" style="padding:6px 0;border:0;cursor:default">${av(m.name)}<div class="who"><div class="n">${esc(m.name)}</div><div class="c">${esc(m.role)}</div></div>${p ? `<button class="btn sm" data-gotoperson="${esc(p.id)}">Open</button>` : `<button class="btn sm primary" data-outreach="${i}">Start outreach</button>`}</div>`).join('') : `<div class="actions"><span class="small">No team listed.</span><button class="btn sm" data-addfounder="1">Add founder</button></div>`}</div>
@@ -557,6 +585,8 @@ async function onViewClick(e) {
   const ft = t.closest('[data-ftab]'); if (ft) { fTab = ft.dataset.ftab; fSel = null; ui.mode = null; return render(); }
   const pc = t.closest('[data-pcat]'); if (pc) { peopleCat = pc.dataset.pcat; return render(); }
   const nt = t.closest('[data-note]'); if (nt) return api.openNote(nt.dataset.note);
+  const rc = t.closest('[data-reach]');
+  if (rc && openDrawer) { await setReach(openDrawer, rc.dataset.reach); return; }
   const u = t.closest('[data-url]'); if (u) return api.open(u.dataset.url);
   const co = t.closest('[data-company]'); if (co) { openDrawer = co.dataset.company; return renderDrawer(); }
   const pr = t.closest('[data-person]'); if (pr) return selectPerson(pr.dataset.person);
@@ -654,6 +684,7 @@ function wire() {
   });
   $('layer').addEventListener('click', e => { onLayerClick(e).catch(() => {}); });
   $('layer').addEventListener('change', async e => {
+    if (e.target.id === 'reachIn' && openDrawer) { await setReach(openDrawer, e.target.value); return; }
     if (e.target.id === 'sheetBox' && openDrawer) { await call('setDealSheet', openDrawer, e.target.checked); await refresh(); toast(e.target.checked ? 'Queued for the deal sheet' : 'Removed from the deal sheet'); }
   });
   $('layer').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.id === 'touchIn') document.querySelector('[data-act="touch"]')?.click(); });

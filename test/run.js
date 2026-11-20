@@ -92,6 +92,17 @@ const hook = file => {
   assert(Array.isArray(A.vault.load().dealSheets));
   touched.add(co2.id);
 
+  // reach-out date: set, show, cleared when the company is reached out
+  const later = A.addInbound({ name: 'Later Co', website: 'later-co.example', how: 'Outbound', note: 'too early', reach_out_on: '2027-03-01' });
+  assert.equal(A.vault.load().inbound.find(x => x.id === later.id).reach_out_on, '2027-03-01');
+  assert.throws(() => A.setReachOut(later.id, 'next march'));
+  A.setReachOut(later.id, T);
+  assert.equal(A.vault.load().inbound.find(x => x.id === later.id).reach_out_on, T);
+  A.addInbound({ name: 'Later Co', note: 'resurfaced', reach_out_on: '2027-06-01' });
+  assert.equal(A.vault.load().inbound.find(x => x.id === later.id).reach_out_on, '2027-06-01');
+  A.setInboundStatus(later.id, 'reached-out');
+  assert.equal(A.vault.load().inbound.find(x => x.id === later.id).reach_out_on, '', 'cleared on reached-out');
+
   // company site lookup
   assert.equal(A.lookup({ url: 'https://quokka-data.example/', siteName: 'Quokka' }).kind, 'company');
   assert.equal(A.lookup({ url: 'https://brand-new.example/', siteName: 'Brand New' }).kind, 'new-company');

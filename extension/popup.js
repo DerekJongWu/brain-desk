@@ -226,6 +226,11 @@ function newPersonView({ guess, company }, page, mode = 'reach') {
 // ---------- companies: websites and LinkedIn company pages ----------
 const STATUS_OPTS = [['new', 'New (just track it)'], ['pursuing', 'Pursuing (want to reach out)']];
 const HOWS = ['Outbound', 'Email', 'Text', 'Intro', 'Event', 'Told to track'];
+const isoIn = n => { const d = new Date(); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
+function reachField(val) {
+  return `<label>Reach out on (optional)<div class="two-btn" style="grid-template-columns:1fr auto auto auto"><input type="date" id="reach" value="${esc(val || '')}">${[['1m', 30], ['3m', 91], ['6m', 182]].map(([l, n]) => `<button type="button" data-in="${isoIn(n)}">${l}</button>`).join('')}</div></label>`;
+}
+function wireReach() { main.querySelectorAll('[data-in]').forEach(b => { b.onclick = () => { $('reach').value = b.dataset.in; }; }); }
 const isLiCompany = page => /linkedin\.com\/company\//i.test(page.url);
 function inboundFields(withName, guess, page) {
   const how = isLiCompany(page) ? 'Outbound' : 'Email';
@@ -241,13 +246,16 @@ function companyView({ match }, page) {
   main.innerHTML = `<div class="who"><b>${esc(match.name)}</b><span class="muted">Already in ${inInbound ? `Inbound · ${esc(match.status)}` : 'Companies'}</span></div>
     ${match.description ? `<div class="note">${esc(match.description)}</div>` : ''}
     ${inInbound && ['new', 'no-reply', 'passed'].includes(match.status) ? `<label class="check"><input type="checkbox" id="pursue" ${match.status === 'new' ? 'checked' : ''}> Move to Pursuing (I want to reach out)</label>` : ''}
-    ${inboundFields(false, {}, page)}<button class="primary" id="go">Add touch</button>
+    ${inboundFields(false, {}, page)}
+    ${inInbound ? reachField(match.reach_out_on) : ''}
+    <button class="primary" id="go">Add touch</button>
     ${inInbound ? '<div class="muted">To reach out to a founder, open their LinkedIn profile and click Brain Desk there.</div>' : ''}`;
   $('go').onclick = e => busy(e.target, async () => {
     const pursue = $('pursue') && $('pursue').checked;
-    await post('/add-inbound', { name: match.name, website: page.website || (isLiCompany(page) ? '' : page.url), referred_by: v('ref'), how: v('how'), note: v('note'), setStatus: pursue ? 'pursuing' : '' });
-    done(pursue ? 'Moved to Pursuing' : 'Touch added', `${match.name} · ${inInbound ? 'Inbound' : 'Companies'}`);
+    await post('/add-inbound', { name: match.name, website: page.website || (isLiCompany(page) ? '' : page.url), referred_by: v('ref'), how: v('how'), note: v('note'), setStatus: pursue ? 'pursuing' : '', reach_out_on: v('reach') });
+    done(pursue ? 'Moved to Pursuing' : 'Touch added', `${match.name} · ${inInbound ? 'Inbound' : 'Companies'}${v('reach') ? ' · reach out ' + fmt(v('reach')) : ''}`);
   });
+  wireReach();
 }
 function newCompanyView({ guess }, page) {
   $('kind').textContent = isLiCompany(page) ? 'LinkedIn company' : 'Company site';
@@ -255,11 +263,13 @@ function newCompanyView({ guess }, page) {
     ${guess.description ? `<div class="note">${esc(guess.description)}</div>` : ''}
     ${inboundFields(true, guess, page)}
     <label>Status<select id="status">${STATUS_OPTS.map(([k, l]) => `<option value="${k}" ${k === (isLiCompany(page) ? 'pursuing' : 'new') ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+    ${reachField('')}
     <button class="primary" id="go">Add to Inbound</button>`;
+  wireReach();
   $('go').onclick = e => busy(e.target, async () => {
     if (!v('name')) throw new Error('Add the company name.');
-    await post('/add-inbound', { name: v('name'), website: v('web'), referred_by: v('ref'), how: v('how'), note: v('note'), raise: v('raise'), status: $('status').value });
-    done('Added to Inbound', `${v('name')} · ${$('status').value === 'pursuing' ? 'Pursuing' : 'New'}`);
+    await post('/add-inbound', { name: v('name'), website: v('web'), referred_by: v('ref'), how: v('how'), note: v('note'), raise: v('raise'), status: $('status').value, reach_out_on: v('reach') });
+    done('Added to Inbound', `${v('name')} · ${$('status').value === 'pursuing' ? 'Pursuing' : 'New'}${v('reach') ? ' · reach out ' + fmt(v('reach')) : ''}`);
   });
   (v('name') ? $('note') : $('name')).focus();
 }
