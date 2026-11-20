@@ -25,6 +25,7 @@ let view = 'today', fSel = null, fTab = 'move', peopleCat = 'all', peopleQ = '',
 let ui = { mode: null, text: '', instructions: '', err: '' };
 let openDrawer = null;
 let sheetQ = '', sheetPick = false;
+let drawerEdit = false;
 
 const T = () => S.today;
 const draftOf = p => S.drafts[p.id];
@@ -311,7 +312,7 @@ function card(c) {
     <div class="ds ${c.description ? '' : 'missing'}">${c.description ? esc(c.description) : 'No description yet'}</div>
     ${c.raise || c.themes.length || c.deal_sheet ? `<div class="bot">${c.raise ? `<span class="tag">${esc(c.raise)}</span>` : ''}${c.themes.map(t => `<span class="tag">${esc(t)}</span>`).join('')}${c.deal_sheet === 'yes' ? '<span class="sheet-flag">● deal sheet</span>' : c.deal_sheet === 'sent' ? '<span class="small">sheet sent</span>' : ''}</div>` : ''}
     ${reachSet(c) ? `<div class="bot">${reachPill(c)}</div>` : ''}
-    <div class="ref">${esc(c.referred_by || 'Direct')} · ${fmt(c.last_touch)}${c.status === 'no-reply' ? ' · no reply' : ''}</div></div>`;
+    <div class="ref">${esc(c.referred_by || 'Direct')} · ${fmt(c.last_touch)}${c.status === 'no-reply' ? ' · no reply' : ''}${(S.enriching || []).includes(c.id) ? ' · <span class="sheet-flag enr">enriching…</span>' : ''}</div></div>`;
 }
 function wireBoard() {
   document.querySelectorAll('.ic').forEach(el => {
@@ -417,20 +418,39 @@ function vPeople() {
 }
 
 // ---------- company drawer ----------
+function editForm(c) {
+  const f = (k, label, ph = '') => `<label class="f">${label}<input id="e-${k}" value="${esc(c[k] || '')}" placeholder="${esc(ph)}"></label>`;
+  return `<div id="editForm" class="editform" data-for="${esc(c.id)}">
+    <div class="f2">${f('website', 'Website', 'https://…')}${f('referred_by', 'Referred by', 'Firm - Person')}</div>
+    ${f('description', 'Description (one line)', 'What the company does')}
+    <label class="f">What it is<textarea id="e-whatItIs" rows="4" placeholder="A few sentences: product, buyer, notable facts">${esc(c.whatItIs === 'One line.' ? '' : c.whatItIs)}</textarea></label>
+    <div class="f2"><label class="f">Round status<select id="e-round_status">${[['', '—'], ['tracking', 'Tracking'], ['raising', 'Raising']].map(([k, l]) => `<option value="${k}" ${c.round_status === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>${f('raise', 'Raise', '$5M seed')}</div>
+    <div class="f2">${f('valuation', 'Valuation', '$40M post')}${f('lead', 'Lead', 'Firm')}</div>
+    ${f('deck_link', 'Deck link', 'docsend.com/…')}
+    <div class="f"><span>Themes</span><div class="chips">${(S.themes || []).map(t => `<button type="button" class="chip" data-theme="${esc(t)}" aria-pressed="${c.themes.includes(t)}">${esc(t)}</button>`).join('')}</div></div>
+    <div class="actions"><button class="btn primary" data-act="save-edit">Save</button><button class="btn ghost" data-act="cancel-edit">Cancel</button></div>
+  </div>`;
+}
 function renderDrawer() {
   const c = inboundById(openDrawer);
   if (!c) { closeLayer(); return; }
+  // don't wipe an edit in progress when the vault refreshes underneath it
+  if (drawerEdit && $('editForm') && $('editForm').dataset.for === c.id) return;
+  const busyEnrich = (S.enriching || []).includes(c.id);
   const people = c.team.map(m => ({ m, p: S.people.find(x => x.name.toLowerCase() === m.name.toLowerCase()) }));
   $('layer').innerHTML = `<div class="scrim" data-scrim="1"><aside class="drawer" role="dialog" aria-label="${esc(c.name)}">
-    <div class="drawer-h"><div style="display:flex;gap:12px;align-items:center;min-width:0">${av(c.name)}<div style="min-width:0"><h3>${esc(c.name)}</h3><div class="small mono">${esc(bareDomain(c.website) || 'no website')} · ${esc(c.id)}</div></div></div><button class="btn ghost sm" data-close="1" aria-label="Close">✕</button></div>
+    <div class="drawer-h"><div style="display:flex;gap:12px;align-items:center;min-width:0">${av(c.name)}<div style="min-width:0"><h3>${esc(c.name)}</h3><div class="small mono">${esc(bareDomain(c.website) || 'no website')} · ${esc(c.id)}</div></div></div>
+      <div style="display:flex;gap:6px;align-items:center">${drawerEdit ? '' : `<button class="btn sm" data-act="enrich" ${busyEnrich ? 'disabled' : ''} title="Look it up in Specter and fill what's blank">${busyEnrich ? 'Enriching…' : '✦ Enrich'}</button><button class="btn sm" data-act="edit">Edit</button>`}<button class="btn ghost sm" data-close="1" aria-label="Close">✕</button></div></div>
     <div class="drawer-b">
       <div><p class="label">Status</p><div class="seg">${['new', 'pursuing', 'reached-out', 'passed', 'no-reply'].map(k => `<button data-setstatus="${k}" aria-pressed="${c.status === k}">${STATUS_LABEL[k]}</button>`).join('')}</div></div>
-      ${c.description || c.whatItIs ? `<div>${c.description ? `<p style="margin:0 0 6px;font-weight:500">${esc(c.description)}</p>` : ''}${c.whatItIs && c.whatItIs !== c.description && c.whatItIs !== 'One line.' ? `<p class="what small">${esc(c.whatItIs)}</p>` : ''}</div>` : '<p class="small" style="margin:0">No description yet. Ask Claude to enrich this note, or open it in Obsidian.</p>'}
+      ${drawerEdit ? editForm(c) : `${c.description || c.whatItIs ? `<div>${c.description ? `<p style="margin:0 0 6px;font-weight:500">${esc(c.description)}</p>` : ''}${c.whatItIs && c.whatItIs !== c.description && c.whatItIs !== 'One line.' ? `<p class="what small">${esc(c.whatItIs)}</p>` : ''}</div>` : `<p class="small" style="margin:0">${busyEnrich ? 'Looking it up in Specter…' : 'No description yet. Click <b>Enrich</b> to pull it from Specter, or <b>Edit</b> to write it.'}</p>`}
       <dl class="fields">
         <dt>Round</dt><dd>${c.round_status ? statusPill(c.round_status) + ' ' : ''}${esc([c.raise, c.valuation && 'at ' + c.valuation, c.lead && 'led by ' + c.lead].filter(Boolean).join(' ')) || '—'}</dd>
         <dt>Referred by</dt><dd>${esc(c.referred_by) || '—'}</dd>
         <dt>Themes</dt><dd>${c.themes.map(t => `<span class="tag">${esc(t)}</span>`).join(' ') || '—'}</dd>
         <dt>Deck</dt><dd>${c.deck_link ? `<button class="btn sm ghost" style="padding:0" data-url="${esc(c.deck_link)}">${esc(c.deck_link)}</button>` : '—'}</dd>
+      </dl>`}
+      <dl class="fields">
         <dt>First seen</dt><dd>${fmt(c.first_seen)} · last touch ${fmt(c.last_touch)}</dd>
         <dt>Reach out on</dt><dd class="reach"><input type="date" class="in" id="reachIn" value="${esc(c.reach_out_on || '')}">
           ${[['2w', 14], ['1m', 30], ['3m', 91], ['6m', 182]].map(([l, n]) => `<button class="btn sm ghost" data-reach="${addDays(T(), n)}" title="${fmt(addDays(T(), n))}">${l}</button>`).join('')}
@@ -445,7 +465,7 @@ function renderDrawer() {
       <div class="actions"><button class="btn" data-note="${esc(c.id)}">Open in Obsidian</button>${c.website ? `<button class="btn ghost" data-url="${esc(c.website)}">Website</button>` : ''}</div>
     </div></aside></div>`;
 }
-function closeLayer() { $('layer').innerHTML = ''; openDrawer = null; }
+function closeLayer() { $('layer').innerHTML = ''; openDrawer = null; drawerEdit = false; }
 
 // ---------- quick add ----------
 let qa = { mode: 'company' };
@@ -585,6 +605,26 @@ async function onViewClick(e) {
   const ft = t.closest('[data-ftab]'); if (ft) { fTab = ft.dataset.ftab; fSel = null; ui.mode = null; return render(); }
   const pc = t.closest('[data-pcat]'); if (pc) { peopleCat = pc.dataset.pcat; return render(); }
   const nt = t.closest('[data-note]'); if (nt) return api.openNote(nt.dataset.note);
+  const th = t.closest('[data-theme]'); if (th) { th.setAttribute('aria-pressed', th.getAttribute('aria-pressed') !== 'true'); return; }
+  const da = t.closest('[data-act]');
+  if (da && openDrawer && ['edit', 'cancel-edit', 'save-edit', 'enrich'].includes(da.dataset.act)) {
+    const c = inboundById(openDrawer);
+    if (da.dataset.act === 'edit') { drawerEdit = true; return renderDrawer(); }
+    if (da.dataset.act === 'cancel-edit') { drawerEdit = false; return renderDrawer(); }
+    if (da.dataset.act === 'save-edit') {
+      const val = k => ($('e-' + k)?.value || '').trim();
+      const fields = Object.fromEntries(['website', 'referred_by', 'description', 'whatItIs', 'round_status', 'raise', 'valuation', 'lead', 'deck_link'].map(k => [k, val(k)]));
+      fields.themes = [...document.querySelectorAll('[data-theme][aria-pressed="true"]')].map(b => b.dataset.theme);
+      const r = await call('editInbound', c.id, fields);
+      drawerEdit = false; await refresh(); renderDrawer();
+      return toast(r.changed.length ? `Saved ${c.name}: ${r.changed.join(', ')}` : 'No changes');
+    }
+    if (da.dataset.act === 'enrich') {
+      const p = call('enrich', c.id); await refresh();
+      const r = await p; await refresh();
+      return toast(!r.found ? `Couldn't find ${c.name} in Specter or on the web` : r.changed.length ? `Enriched ${c.name}: ${r.changed.join(', ')}` : `${c.name}: nothing blank to fill`);
+    }
+  }
   const rc = t.closest('[data-reach]');
   if (rc && openDrawer) { await setReach(openDrawer, rc.dataset.reach); return; }
   const u = t.closest('[data-url]'); if (u) return api.open(u.dataset.url);

@@ -268,8 +268,8 @@ function newCompanyView({ guess }, page) {
   wireReach();
   $('go').onclick = e => busy(e.target, async () => {
     if (!v('name')) throw new Error('Add the company name.');
-    await post('/add-inbound', { name: v('name'), website: v('web'), referred_by: v('ref'), how: v('how'), note: v('note'), raise: v('raise'), status: $('status').value, reach_out_on: v('reach') });
-    done('Added to Inbound', `${v('name')} · ${$('status').value === 'pursuing' ? 'Pursuing' : 'New'}${v('reach') ? ' · reach out ' + fmt(v('reach')) : ''}`);
+    const r = await post('/add-inbound', { name: v('name'), website: v('web'), referred_by: v('ref'), how: v('how'), note: v('note'), raise: v('raise'), status: $('status').value, reach_out_on: v('reach') });
+    done('Added to Inbound', `${v('name')} · ${$('status').value === 'pursuing' ? 'Pursuing' : 'New'}${v('reach') ? ' · reach out ' + fmt(v('reach')) : ''}${r.enriching ? ' · enriching from Specter in the background' : ''}`);
   });
   (v('name') ? $('note') : $('name')).focus();
 }

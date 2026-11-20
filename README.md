@@ -90,8 +90,17 @@ npm test               # every action against a throwaway vault copy + a local g
 node test/server.js    # the Chrome-button endpoints
 ```
 
+- **Edit** (company drawer): website, description, What it is, referred by,
+  round fields, deck link, and themes (picked from the theme table in
+  `VAULT_SCHEMA.md`).
+- **Enrich** (company drawer): Claude looks the company up in Specter, or on the
+  web if Specter has nothing, using your Claude login. It fills only blank
+  fields (website, description, What it is, including the last round), adds
+  matching themes, and adds founders to Team. It never overwrites what's there.
+  Companies newly added from the Chrome button or Quick add are enriched
+  automatically in the background, which takes about 30–40 seconds.
+
 ## Not built yet
 
 - Picking up email replies from Outlook automatically.
-- "Enrich" for inbound notes (description, team, themes from Specter).
 - A packaged `.app` (it runs with `npm start` for now).

@@ -243,3 +243,9 @@ input,select,textarea{font-family:var(--sans)}
 
 .fields dd.reach{display:flex;align-items:center;gap:4px;flex-wrap:wrap}
 .fields dd.reach input[type=date]{width:150px;padding:3px 8px}
+
+.editform{display:grid;gap:10px}
+.chips{display:flex;flex-wrap:wrap;gap:5px;margin-top:4px}
+.chip{font:500 11.5px var(--mono);border:1px solid var(--line-strong);background:var(--surface);color:var(--muted);border-radius:999px;padding:2px 9px;cursor:pointer}
+.chip[aria-pressed="true"]{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+.sheet-flag.enr{color:var(--accent)}

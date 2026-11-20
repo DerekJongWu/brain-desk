@@ -103,6 +103,30 @@ const hook = file => {
   A.setInboundStatus(later.id, 'reached-out');
   assert.equal(A.vault.load().inbound.find(x => x.id === later.id).reach_out_on, '', 'cleared on reached-out');
 
+  // hand edits from the drawer
+  const ed = A.addInbound({ name: 'Edit Me Co', note: 'x' });
+  const theme = A.vault.knownThemes()[0];
+  let r2 = A.editInbound(ed.id, { description: 'Agent firewalls', website: 'https://editme.example', round_status: 'raising', raise: '$4M seed', themes: [theme], whatItIs: 'Two sentences. About the thing.' });
+  assert.deepEqual(r2.changed.sort(), ['description', 'raise', 'round_status', 'themes', 'website', 'what it is'].sort());
+  let e2 = A.vault.load().inbound.find(x => x.id === ed.id);
+  assert.equal(e2.description, 'Agent firewalls'); assert.deepEqual(e2.themes, [theme]); assert.equal(e2.whatItIs, 'Two sentences. About the thing.');
+  assert.equal(e2.team.length, 0, 'team untouched');
+  assert.throws(() => A.editInbound(ed.id, { themes: ['made-up-theme'] }), /Unknown theme/);
+  assert.throws(() => A.editInbound(ed.id, { round_status: 'hot' }));
+  assert.deepEqual(A.editInbound(ed.id, { description: 'Agent firewalls' }).changed, []);
+  touched.add(ed.id);
+
+  // enrich (Claude stubbed): fills blanks only, adds team, keeps known themes
+  const claude = require('../lib/claude'); const realRun = claude.run;
+  claude.run = async () => 'Here: {"found": true, "website": "https://enrich.example", "description": "Should not overwrite", "what_it_is": "", "themes": ["' + theme + '", "not-a-theme"], "team": [{"role": "CEO", "name": "Ada Founder", "linkedin": "https://www.linkedin.com/in/ada-f/?x"}]}';
+  const en = await A.enrich(ed.id);
+  claude.run = realRun;
+  e2 = A.vault.load().inbound.find(x => x.id === ed.id);
+  assert.equal(e2.description, 'Agent firewalls', 'never overwrites'); assert.equal(e2.website, 'https://editme.example');
+  assert.deepEqual(e2.themes, [theme]); assert.equal(e2.team[0].name, 'Ada Founder'); assert.equal(e2.team[0].linkedin, 'https://www.linkedin.com/in/ada-f');
+  assert.deepEqual(en.changed, ['1 on the team']);
+  assert(!fs.readFileSync(path.join(A.vault.root, ed.id), 'utf8').includes('not stated'), 'placeholder replaced');
+
   // company site lookup
   assert.equal(A.lookup({ url: 'https://quokka-data.example/', siteName: 'Quokka' }).kind, 'company');
   assert.equal(A.lookup({ url: 'https://brand-new.example/', siteName: 'Brand New' }).kind, 'new-company');

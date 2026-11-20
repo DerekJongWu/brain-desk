@@ -36,7 +36,7 @@ async function connect(vaultPath) {
   const gitCheck = await gitQueue.check();
   gitQueue.on('status', st => send('git', st));
   store = store || new Store(path.join(app.getPath('userData'), 'state.json'));
-  actions = new Actions({ vaultRoot: vaultPath, store, gitQueue, onChange: changed });
+  actions = new Actions({ vaultRoot: vaultPath, store, gitQueue, onChange: changed, autoEnrich: !process.env.BRAIN_DESK_SHOTS });
   if (watcher) watcher.close();
   try {
     watcher = fs.watch(vaultPath, { recursive: true }, (_e, f) => {
@@ -67,7 +67,7 @@ function openExternal(url) {
 
 // Actions the window may call. Anything else is refused.
 const ALLOWED = ['draft', 'saveDraft', 'discardDraft', 'logSent', 'logReply', 'snooze', 'closeOut', 'setupOutreach',
-  'addPerson', 'addInbound', 'setInboundStatus', 'setDealSheet', 'setReachOut', 'addTouch', 'startOutreach'];
+  'addPerson', 'addInbound', 'setInboundStatus', 'setDealSheet', 'setReachOut', 'editInbound', 'enrich', 'addTouch', 'startOutreach'];
 
 ipcMain.handle('init', async () => {
   const cfg = readConfig();
