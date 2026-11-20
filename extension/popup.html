@@ -1,0 +1,45 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+:root{--bg:#fff;--fg:#14171C;--muted:#606875;--line:#E4E7EC;--sunken:#F0F2F5;--accent:#3451D1;--li:#0A66C2;--warn-bg:#FBF1DC;--ok:#0E7A6E;--err:#C2261A;--draft:#A16207}
+@media (prefers-color-scheme:dark){:root{--bg:#16191F;--fg:#E8EAEE;--muted:#9AA2AE;--line:#262B33;--sunken:#1D2128;--accent:#8099F5;--li:#5AA2EA;--warn-bg:#33280F;--ok:#5ECABB;--err:#F87171;--draft:#E8B45A;color-scheme:dark}}
+*{box-sizing:border-box}
+body{margin:0;width:340px;background:var(--bg);color:var(--fg);font:13px/1.45 -apple-system,BlinkMacSystemFont,system-ui,sans-serif}
+header{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line)}
+header img{width:20px;height:20px;border-radius:5px}
+header b{font-weight:600}
+header span{margin-left:auto;color:var(--muted);font-size:12px}
+main{padding:12px;display:grid;gap:10px}
+.who{display:grid;gap:1px}
+.who b{font-size:14px}
+.muted{color:var(--muted);font-size:12px}
+label{display:grid;gap:4px;font-size:12px;color:var(--muted)}
+input,select,textarea{font:13px -apple-system,system-ui,sans-serif;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg);width:100%}
+textarea{min-height:64px;resize:vertical}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+button{font:500 13px -apple-system,system-ui,sans-serif;border:1px solid var(--line);background:var(--bg);color:var(--fg);border-radius:7px;padding:7px 12px;cursor:pointer}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+button.li{background:var(--li);border-color:var(--li);color:#fff}
+button:disabled{opacity:.6}
+.seg{display:flex;gap:3px;background:var(--sunken);padding:3px;border-radius:7px}
+.seg button{flex:1;border:0;background:none;padding:4px 6px;font-size:12px;color:var(--muted)}
+.seg button[aria-pressed="true"]{background:var(--bg);color:var(--fg);box-shadow:0 1px 2px rgba(0,0,0,.1)}
+.draft{background:var(--warn-bg);border-radius:8px;padding:8px 10px;font-size:12.5px;max-height:120px;overflow:auto;white-space:pre-wrap}
+.draft b{color:var(--draft);display:block;font-size:11.5px;margin-bottom:3px}
+.note{background:var(--sunken);border-radius:8px;padding:8px 10px;font-size:12.5px}
+.check{display:flex;gap:8px;align-items:center;color:var(--fg);font-size:12.5px}
+.check input{width:auto}
+.done{display:grid;gap:6px;text-align:center;padding:18px 6px}
+.done .big{font-size:26px;color:var(--ok)}
+.err{color:var(--err)}
+.link{border:0;background:none;color:var(--accent);padding:0;font-size:12px;justify-self:start}
+</style>
+</head>
+<body>
+<header><img src="icons/32.png" alt=""><b>Brain Desk</b><span id="kind"></span></header>
+<main id="main"><div class="muted">Reading this page…</div></main>
+<script src="popup.js"></script>
+</body>
+</html>

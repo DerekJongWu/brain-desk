@@ -1,0 +1,17 @@
+{
+  "name": "brain-desk",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Outreach follow-ups and inbound triage on top of the canaan-brain Obsidian vault",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "node test/run.js && node test/server.js"
+  },
+  "dependencies": {
+    "js-yaml": "^4.1.0"
+  },
+  "devDependencies": {
+    "electron": "^45.4.1"
+  }
+}
