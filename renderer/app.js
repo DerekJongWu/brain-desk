@@ -26,6 +26,7 @@ let ui = { mode: null, text: '', instructions: '', err: '' };
 let openDrawer = null;
 let sheetQ = '', sheetPick = false;
 let drawerEdit = false;
+const enrichingLocal = new Set(); // shows 'Enriching…' immediately, before the vault reports it
 
 const T = () => S.today;
 const draftOf = p => S.drafts[p.id];
@@ -312,7 +313,7 @@ function card(c) {
     <div class="ds ${c.description ? '' : 'missing'}">${c.description ? esc(c.description) : 'No description yet'}</div>
     ${c.raise || c.themes.length || c.deal_sheet ? `<div class="bot">${c.raise ? `<span class="tag">${esc(c.raise)}</span>` : ''}${c.themes.map(t => `<span class="tag">${esc(t)}</span>`).join('')}${c.deal_sheet === 'yes' ? '<span class="sheet-flag">● deal sheet</span>' : c.deal_sheet === 'sent' ? '<span class="small">sheet sent</span>' : ''}</div>` : ''}
     ${reachSet(c) ? `<div class="bot">${reachPill(c)}</div>` : ''}
-    <div class="ref">${esc(c.referred_by || 'Direct')} · ${fmt(c.last_touch)}${c.status === 'no-reply' ? ' · no reply' : ''}${(S.enriching || []).includes(c.id) ? ' · <span class="sheet-flag enr">enriching…</span>' : ''}</div></div>`;
+    <div class="ref">${esc(c.referred_by || 'Direct')} · ${fmt(c.last_touch)}${c.status === 'no-reply' ? ' · no reply' : ''}${enrichingLocal.has(c.id) || (S.enriching || []).includes(c.id) ? ' · <span class="sheet-flag enr">enriching…</span>' : ''}</div></div>`;
 }
 function wireBoard() {
   document.querySelectorAll('.ic').forEach(el => {
@@ -436,13 +437,14 @@ function renderDrawer() {
   if (!c) { closeLayer(); return; }
   // don't wipe an edit in progress when the vault refreshes underneath it
   if (drawerEdit && $('editForm') && $('editForm').dataset.for === c.id) return;
-  const busyEnrich = (S.enriching || []).includes(c.id);
+  const busyEnrich = enrichingLocal.has(c.id) || (S.enriching || []).includes(c.id);
   const people = c.team.map(m => ({ m, p: S.people.find(x => x.name.toLowerCase() === m.name.toLowerCase()) }));
   $('layer').innerHTML = `<div class="scrim" data-scrim="1"><aside class="drawer" role="dialog" aria-label="${esc(c.name)}">
     <div class="drawer-h"><div style="display:flex;gap:12px;align-items:center;min-width:0">${av(c.name)}<div style="min-width:0"><h3>${esc(c.name)}</h3><div class="small mono">${esc(bareDomain(c.website) || 'no website')} · ${esc(c.id)}</div></div></div>
       <div style="display:flex;gap:6px;align-items:center">${drawerEdit ? '' : `<button class="btn sm" data-act="enrich" ${busyEnrich ? 'disabled' : ''} title="Look it up in Specter and fill what's blank">${busyEnrich ? 'Enriching…' : '✦ Enrich'}</button><button class="btn sm" data-act="edit">Edit</button>`}<button class="btn ghost sm" data-close="1" aria-label="Close">✕</button></div></div>
     <div class="drawer-b">
       <div><p class="label">Status</p><div class="seg">${['new', 'pursuing', 'reached-out', 'passed', 'no-reply'].map(k => `<button data-setstatus="${k}" aria-pressed="${c.status === k}">${STATUS_LABEL[k]}</button>`).join('')}</div></div>
+      ${busyEnrich && !drawerEdit ? '<div class="enrich-banner"><span class="spin"></span><div><b>Looking it up in Specter…</b><div class="small">Usually 30–40 seconds. Blank fields fill in on their own; you can close this.</div></div></div>' : ''}
       ${drawerEdit ? editForm(c) : `${c.description || c.whatItIs ? `<div>${c.description ? `<p style="margin:0 0 6px;font-weight:500">${esc(c.description)}</p>` : ''}${c.whatItIs && c.whatItIs !== c.description && c.whatItIs !== 'One line.' ? `<p class="what small">${esc(c.whatItIs)}</p>` : ''}</div>` : `<p class="small" style="margin:0">${busyEnrich ? 'Looking it up in Specter…' : 'No description yet. Click <b>Enrich</b> to pull it from Specter, or <b>Edit</b> to write it.'}</p>`}
       <dl class="fields">
         <dt>Round</dt><dd>${c.round_status ? statusPill(c.round_status) + ' ' : ''}${esc([c.raise, c.valuation && 'at ' + c.valuation, c.lead && 'led by ' + c.lead].filter(Boolean).join(' ')) || '—'}</dd>
@@ -605,28 +607,6 @@ async function onViewClick(e) {
   const ft = t.closest('[data-ftab]'); if (ft) { fTab = ft.dataset.ftab; fSel = null; ui.mode = null; return render(); }
   const pc = t.closest('[data-pcat]'); if (pc) { peopleCat = pc.dataset.pcat; return render(); }
   const nt = t.closest('[data-note]'); if (nt) return api.openNote(nt.dataset.note);
-  const th = t.closest('[data-theme]'); if (th) { th.setAttribute('aria-pressed', th.getAttribute('aria-pressed') !== 'true'); return; }
-  const da = t.closest('[data-act]');
-  if (da && openDrawer && ['edit', 'cancel-edit', 'save-edit', 'enrich'].includes(da.dataset.act)) {
-    const c = inboundById(openDrawer);
-    if (da.dataset.act === 'edit') { drawerEdit = true; return renderDrawer(); }
-    if (da.dataset.act === 'cancel-edit') { drawerEdit = false; return renderDrawer(); }
-    if (da.dataset.act === 'save-edit') {
-      const val = k => ($('e-' + k)?.value || '').trim();
-      const fields = Object.fromEntries(['website', 'referred_by', 'description', 'whatItIs', 'round_status', 'raise', 'valuation', 'lead', 'deck_link'].map(k => [k, val(k)]));
-      fields.themes = [...document.querySelectorAll('[data-theme][aria-pressed="true"]')].map(b => b.dataset.theme);
-      const r = await call('editInbound', c.id, fields);
-      drawerEdit = false; await refresh(); renderDrawer();
-      return toast(r.changed.length ? `Saved ${c.name}: ${r.changed.join(', ')}` : 'No changes');
-    }
-    if (da.dataset.act === 'enrich') {
-      const p = call('enrich', c.id); await refresh();
-      const r = await p; await refresh();
-      return toast(!r.found ? `Couldn't find ${c.name} in Specter or on the web` : r.changed.length ? `Enriched ${c.name}: ${r.changed.join(', ')}` : `${c.name}: nothing blank to fill`);
-    }
-  }
-  const rc = t.closest('[data-reach]');
-  if (rc && openDrawer) { await setReach(openDrawer, rc.dataset.reach); return; }
   const u = t.closest('[data-url]'); if (u) return api.open(u.dataset.url);
   const co = t.closest('[data-company]'); if (co) { openDrawer = co.dataset.company; return renderDrawer(); }
   const pr = t.closest('[data-person]'); if (pr) return selectPerson(pr.dataset.person);
@@ -689,6 +669,32 @@ async function onLayerClick(e) {
   if (a && a.dataset.act === 'reveal-ext') return api.revealExtension();
   const c = openDrawer && inboundById(openDrawer);
   if (!c) return;
+  const th = t.closest('[data-theme]'); if (th) { th.setAttribute('aria-pressed', th.getAttribute('aria-pressed') !== 'true'); return; }
+  const da = t.closest('[data-act]');
+  if (da && openDrawer && ['edit', 'cancel-edit', 'save-edit', 'enrich'].includes(da.dataset.act)) {
+    const c = inboundById(openDrawer);
+    if (da.dataset.act === 'edit') { drawerEdit = true; return renderDrawer(); }
+    if (da.dataset.act === 'cancel-edit') { drawerEdit = false; return renderDrawer(); }
+    if (da.dataset.act === 'save-edit') {
+      const val = k => ($('e-' + k)?.value || '').trim();
+      const fields = Object.fromEntries(['website', 'referred_by', 'description', 'whatItIs', 'round_status', 'raise', 'valuation', 'lead', 'deck_link'].map(k => [k, val(k)]));
+      fields.themes = [...document.querySelectorAll('[data-theme][aria-pressed="true"]')].map(b => b.dataset.theme);
+      const r = await call('editInbound', c.id, fields);
+      drawerEdit = false; await refresh(); renderDrawer();
+      return toast(r.changed.length ? `Saved ${c.name}: ${r.changed.join(', ')}` : 'No changes');
+    }
+    if (da.dataset.act === 'enrich') {
+      enrichingLocal.add(c.id); renderDrawer(); render();
+      toast(`Enriching ${c.name} from Specter…`);
+      try {
+        const r = await call('enrich', c.id);
+        toast(!r.found ? `Couldn't find ${c.name} in Specter or on the web` : r.changed.length ? `Enriched ${c.name}: ${r.changed.join(', ')}` : `${c.name}: nothing blank to fill (Enrich never overwrites; clear a field in Edit to refresh it)`);
+      } finally { enrichingLocal.delete(c.id); await refresh(); }
+      return;
+    }
+  }
+  const rc = t.closest('[data-reach]');
+  if (rc && openDrawer) { await setReach(openDrawer, rc.dataset.reach); return; }
   const ss = t.closest('[data-setstatus]'); if (ss) { if (ss.dataset.setstatus !== c.status) await setStatus(c.id, ss.dataset.setstatus); return; }
   if (t.closest('[data-addfounder]')) { const name = c.name; closeLayer(); openQuickAdd('person', { company: name }); $('p-cat').value = 'founder'; return; }
   const gp = t.closest('[data-gotoperson]'); if (gp) { closeLayer(); return selectPerson(gp.dataset.gotoperson); }

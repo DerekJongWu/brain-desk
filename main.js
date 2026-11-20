@@ -53,7 +53,7 @@ function createWindow() {
     width: 1320, height: 860, minWidth: 900, minHeight: 600,
     title: 'Brain Desk', titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 16, y: 18 },
     backgroundColor: '#F7F8FA', show: false,
-    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true },
+    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: !process.env.BRAIN_DESK_SHOTS },
   });
   win.once('ready-to-show', () => win.show());
   win.loadFile(path.join(__dirname, 'renderer/index.html'));
