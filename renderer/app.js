@@ -16,7 +16,7 @@ const normName = s => String(s || '').toLowerCase().replace(/\(.*?\)/g, '').repl
 const errMsg = e => String(e && e.message || e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
 
 const CATS = { founder: 'Founder', vc: 'VC', operator: 'Operator', lp: 'LP', other: 'Other' };
-const STATUSES = [['new', 'New', 'var(--new)'], ['pursuing', 'Pursuing', 'var(--pursue)'], ['reached-out', 'Reached out', 'var(--wait)'], ['passed', 'Passed / no reply', 'var(--pass)']];
+const STATUSES = [['new', 'New', 'var(--new)'], ['pursuing', 'Pursuing', 'var(--pursue)'], ['reached-out', 'Reached out', 'var(--wait)'], ['no-reply', 'No reply', 'var(--owe)'], ['passed', 'Passed', 'var(--pass)']];
 const STATUS_LABEL = { new: 'New', pursuing: 'Pursuing', 'reached-out': 'Reached out', passed: 'Passed', 'no-reply': 'No reply' };
 
 // ---------- state ----------
@@ -26,6 +26,7 @@ let ui = { mode: null, text: '', instructions: '', err: '' };
 let openDrawer = null;
 let sheetQ = '', sheetPick = false;
 let drawerEdit = false;
+let showPassed = false; // the Passed column (Inbound/Passed/) stays collapsed unless opened
 const enrichingLocal = new Set(); // shows 'Enriching…' immediately, before the vault reports it
 
 const T = () => S.today;
@@ -304,10 +305,11 @@ function vInbound() {
       <span style="margin-left:auto" class="pill grey">${sheet} queued for deal sheet</span>
       <button class="btn primary sm" data-act="qa-company">＋ Add company</button>
     </div>
-    <div class="board">${STATUSES.map(([k, l, c]) => {
-      const list = S.inbound.filter(x => (x.status === k || (k === 'passed' && x.status === 'no-reply')) && match(x))
+    <div class="board ${showPassed ? 'with-passed' : ''}">${STATUSES.map(([k, l, c]) => {
+      const list = S.inbound.filter(x => x.status === k && match(x))
         .sort((a, b) => (b.last_touch || '').localeCompare(a.last_touch || ''));
-      return `<div class="col" data-col="${k}"><div class="col-h"><i style="background:${c}"></i>${l} <span>${list.length}</span></div>${list.map(card).join('')}</div>`;
+      if (k === 'passed' && !showPassed) return `<div class="col collapsed" data-col="passed" title="Passed companies live in Inbound/Passed/. Drop a card here to pass on it."><div class="col-h"><i style="background:${c}"></i>${l} <span>${list.length}</span></div><button class="btn sm ghost" data-act="show-passed">Show</button><div class="small" style="padding:0 6px">Drop a card here to pass. Filed in <span class="mono">Inbound/Passed/</span>.</div></div>`;
+      return `<div class="col" data-col="${k}"><div class="col-h"><i style="background:${c}"></i>${l} <span>${list.length}</span>${k === 'passed' ? '<button class="btn sm ghost" style="margin-left:auto" data-act="hide-passed">Hide</button>' : ''}</div>${list.map(card).join('')}</div>`;
     }).join('')}</div>`;
 }
 function card(c) {
@@ -329,7 +331,7 @@ function wireBoard() {
     col.addEventListener('drop', async e => {
       e.preventDefault(); col.classList.remove('over');
       const id = e.dataTransfer.getData('text/plain'), c = inboundById(id);
-      if (!c || c.status === col.dataset.col || (col.dataset.col === 'passed' && c.status === 'no-reply')) return;
+      if (!c || c.status === col.dataset.col) return;
       await setStatus(id, col.dataset.col);
     });
   });
@@ -344,10 +346,13 @@ async function setReach(id, date) {
 }
 async function setStatus(id, status) {
   const c = inboundById(id);
-  await call('setInboundStatus', id, status);
-  toast(`${c.name} → ${STATUS_LABEL[status]}`);
+  const r = await call('setInboundStatus', id, status);
+  const newId = (r && r.id) || id; // passing moves the note into Inbound/Passed/
+  if (openDrawer === id) openDrawer = newId;
+  if (fSel === id) fSel = newId;
+  toast(`${c.name} → ${STATUS_LABEL[status]}${status === 'passed' ? ' · filed in Inbound/Passed' : c.status === 'passed' ? ' · back in Inbound' : ''}`);
   await refresh();
-  if (status === 'pursuing') { openDrawer = id; renderDrawer(); }
+  if (status === 'pursuing') { openDrawer = newId; renderDrawer(); }
 }
 
 // ---------- Deal sheet ----------
@@ -626,6 +631,7 @@ async function onViewClick(e) {
   const act = a.dataset.act;
   if (act === 'qa-person') return openQuickAdd('person');
   if (act === 'qa-company') return openQuickAdd('company');
+  if (act === 'show-passed' || act === 'hide-passed') { showPassed = act === 'show-passed'; return render(); }
   if (!p) return;
   const text = () => ($('draftBox')?.value || '').trim();
   switch (act) {

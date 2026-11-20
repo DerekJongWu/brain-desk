@@ -25,7 +25,10 @@ the app running in the dock, so the Chrome button keeps working. Quit with ⌘Q.
   **Draft** asks Claude, using your Claude Code login and the `derek-voice`
   skill, so no API key is needed. **Copy & open LinkedIn** saves the message as
   *Drafted, not sent*. Confirm with the Chrome button once you've sent it.
-- **Inbound**: a drag-and-drop board (New → Pursuing → Reached out → Passed),
+- **Inbound**: a drag-and-drop board (New → Pursuing → Reached out → No reply,
+  plus a collapsed Passed column). Passing on a company moves its note to
+  `Inbound/Passed/` (the graveyard), and un-passing moves it back. Passed notes still
+  count for duplicate checks, market tables and the deal sheet,
   plus a drawer per company for status, deal sheet, touches, and
   *Start outreach* to the founder. **Reach out on** sets a date for a company
   you're tracking for later (`reach_out_on`). It shows on Today once the date

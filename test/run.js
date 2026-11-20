@@ -147,6 +147,15 @@ const hook = file => {
   assert.deepEqual(en.changed, ['1 on the team']);
   assert(!fs.readFileSync(path.join(A.vault.root, ed.id), 'utf8').includes('not stated'), 'placeholder replaced');
 
+  // passing files the note in Inbound/Passed/; un-passing brings it back; still found for dedupe
+  const gy = A.addInbound({ name: 'Graveyard Co', website: 'graveyard.example', note: 'meh' });
+  const moved = A.setInboundStatus(gy.id, 'passed');
+  assert.equal(moved.id, 'Inbound/Passed/Graveyard Co.md'); assert(!fs.existsSync(path.join(vault, gy.id)));
+  assert.equal(A.vault.load().inbound.find(x => x.name === 'Graveyard Co').status, 'passed');
+  assert.equal(A.addInbound({ name: 'Graveyard Co.', note: 'back again' }).existed, 'inbound', 'dedupe sees the graveyard');
+  assert.equal(A.setInboundStatus(moved.id, 'no-reply').id, 'Inbound/Graveyard Co.md');
+  A.setInboundStatus('Inbound/Graveyard Co.md', 'passed'); touched.add('Inbound/Passed/Graveyard Co.md');
+
   // company site lookup
   assert.equal(A.lookup({ url: 'https://quokka-data.example/', siteName: 'Quokka' }).kind, 'company');
   assert.equal(A.lookup({ url: 'https://brand-new.example/', siteName: 'Brand New' }).kind, 'new-company');
