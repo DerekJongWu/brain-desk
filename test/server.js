@@ -41,7 +41,41 @@ const req = (p, body, origin) => fetch(`http://127.0.0.1:${PORT}${p}`, { method:
   assert.equal(r.j.existed, null);
   assert.equal((await req('/add-inbound', { name: 'Glimmer Robotics, Inc.', website: '' }, ext)).j.existed, 'inbound', 'Inc. variant dedupes');
   r = await req('/log-reply', { id: 'People/Nobody.md', note: 'x' }, ext); assert.equal(r.status, 400);
-  console.log(fs.readFileSync(path.join(vault, 'Inbound/Glimmer Robotics.md'), 'utf8'));
+  // "I want to reach out": new founder + new company -> person due today, company Pursuing
+  r = await req('/add-prospect', { name: 'Sam Prospect', role: 'Founder & CEO', company: 'Quiet Harbor', linkedin: 'https://www.linkedin.com/in/sam-prospect/?x=1', category: 'founder', days: 10, addCompany: true }, ext);
+  assert.equal(r.status, 200, JSON.stringify(r.j)); assert.equal(r.j.inbound.status, 'pursuing');
+  let qh = fs.readFileSync(path.join(vault, 'Inbound/Quiet Harbor.md'), 'utf8');
+  assert.match(qh, /^status: pursuing$/m); assert.match(qh, /- Founder & CEO: Sam Prospect \(https:\/\/www.linkedin.com\/in\/sam-prospect\)/);
+  let sam = A.person(r.j.id);
+  assert.equal(sam.next, A.vault.load().today); assert.equal(sam.cadence, 10); assert.equal(sam.log.length, 0);
+  r = await req('/lookup', { url: 'https://www.linkedin.com/in/sam-prospect/' }, ext);
+  assert.equal(r.j.kind, 'person'); assert.equal(r.j.person.due, true); assert.equal(r.j.person.draftKind, 'first');
+  // drafting from the button saves a pending draft; sending flips Inbound to Reached out
+  A.draft = async () => ({ text: 'Hi Sam, loved the launch.', kind: 'first' });
+  r = await req('/draft', { id: sam.id, days: 10 }, ext);
+  assert.equal(r.j.text, 'Hi Sam, loved the launch.'); assert.equal(r.j.draft.cadence, 10);
+  r = await req('/save-draft', { id: sam.id, text: 'Hi Sam, loved the launch!', days: 14 }, ext);
+  assert.equal((await req('/lookup', { url: 'https://www.linkedin.com/in/sam-prospect/' }, ext)).j.draft.text, 'Hi Sam, loved the launch!');
+  assert.equal((await req('/save-draft', { id: sam.id, text: '  ' }, ext)).status, 400);
+  r = await req('/log-person', { id: sam.id, note: '', days: 14 }, ext); assert.equal(r.status, 200);
+  qh = fs.readFileSync(path.join(vault, 'Inbound/Quiet Harbor.md'), 'utf8');
+  assert.match(qh, /^status: reached-out$/m);
+  // a second founder at a company already in Inbound joins its team; "new" becomes "pursuing"
+  const newOne = A.vault.load().inbound.find(c => c.status === 'new');
+  if (newOne) {
+    r = await req('/add-prospect', { name: 'Riley Cofounder', role: 'CTO', company: newOne.name, linkedin: 'https://www.linkedin.com/in/riley-co/', category: 'founder', days: 7, addCompany: true }, ext);
+    assert.equal(r.j.inbound.created, false); assert.equal(r.j.inbound.status, 'pursuing');
+    const t = fs.readFileSync(path.join(vault, newOne.id), 'utf8');
+    assert.match(t, /^status: pursuing$/m); assert.match(t, /CTO: Riley Cofounder/); assert.match(t, /Derek: want to reach out to Riley Cofounder/);
+    const again = await req('/add-prospect', { name: 'Riley Cofounder', role: 'CTO', company: newOne.name, linkedin: 'https://www.linkedin.com/in/riley-co/', addCompany: true }, ext);
+    assert.equal(fs.readFileSync(path.join(vault, newOne.id), 'utf8').split('Riley Cofounder (').length, 2, 'no duplicate team line'); assert.equal(again.status, 200);
+  }
+  const hook = path.join(SRC, '.claude/hooks/check-vocab.sh');
+  for (const f of ['Inbound/Quiet Harbor.md', sam.id, ...(newOne ? [newOne.id] : [])]) {
+    const out = require('child_process').spawnSync('bash', [hook], { input: JSON.stringify({ tool_input: { file_path: path.join(vault, f) } }), encoding: 'utf8' });
+    assert.equal(out.status, 0, f + ' fails vocab hook: ' + out.stderr);
+  }
+  console.log(fs.readFileSync(path.join(vault, 'Inbound/Quiet Harbor.md'), 'utf8'));
   console.log('SERVER TESTS PASSED');
   srv.close(); fs.rmSync(tmp, { recursive: true, force: true });
 })().catch(e => { console.error('FAILED', e); srv.close(); process.exit(1); });

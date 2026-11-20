@@ -6,7 +6,7 @@
 :root{--bg:#fff;--fg:#14171C;--muted:#606875;--line:#E4E7EC;--sunken:#F0F2F5;--accent:#3451D1;--li:#0A66C2;--warn-bg:#FBF1DC;--ok:#0E7A6E;--err:#C2261A;--draft:#A16207}
 @media (prefers-color-scheme:dark){:root{--bg:#16191F;--fg:#E8EAEE;--muted:#9AA2AE;--line:#262B33;--sunken:#1D2128;--accent:#8099F5;--li:#5AA2EA;--warn-bg:#33280F;--ok:#5ECABB;--err:#F87171;--draft:#E8B45A;color-scheme:dark}}
 *{box-sizing:border-box}
-body{margin:0;width:340px;background:var(--bg);color:var(--fg);font:13px/1.45 -apple-system,BlinkMacSystemFont,system-ui,sans-serif}
+body{margin:0;width:380px;background:var(--bg);color:var(--fg);font:13px/1.45 -apple-system,BlinkMacSystemFont,system-ui,sans-serif}
 header{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line)}
 header img{width:20px;height:20px;border-radius:5px}
 header b{font-weight:600}
@@ -34,6 +34,11 @@ button:disabled{opacity:.6}
 .done{display:grid;gap:6px;text-align:center;padding:18px 6px}
 .done .big{font-size:26px;color:var(--ok)}
 .err{color:var(--err)}
+#form{display:grid;gap:10px}
+.ok{color:var(--ok);font-size:12.5px}
+.two-btn{display:grid;grid-template-columns:1fr auto;gap:6px}
+.two-btn button{white-space:nowrap}
+textarea.big-text{min-height:150px}
 .link{border:0;background:none;color:var(--accent);padding:0;font-size:12px;justify-self:start}
 </style>
 </head>

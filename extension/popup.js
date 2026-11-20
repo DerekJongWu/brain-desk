@@ -4,6 +4,7 @@ const API = 'http://127.0.0.1:47817';
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const main = $('main');
+const v = id => ($(id) ? $(id).value.trim() : '');
 const CATS = [['founder', 'Founder'], ['vc', 'VC'], ['operator', 'Operator'], ['lp', 'LP'], ['other', 'Other']];
 const DAYS = [3, 5, 7, 10, 14, 21, 30];
 const dayOpts = sel => DAYS.map(n => `<option value="${n}" ${n === sel ? 'selected' : ''}>${n} days</option>`).join('');
@@ -68,38 +69,57 @@ async function busy(btn, fn) {
   try { await fn(); } catch (e) { btn.disabled = false; btn.textContent = label; let el = $('err'); if (!el) { el = document.createElement('div'); el.id = 'err'; el.className = 'err'; main.appendChild(el); } el.textContent = e.message; }
 }
 
-// ---------- a person already in the vault ----------
-function personView({ person: p, draft }, page) {
-  $('kind').textContent = 'LinkedIn profile';
-  const head = `<div class="who"><b>${esc(p.name)}</b><span class="muted">${esc([p.role, p.company].filter(Boolean).join(' · '))}</span></div>`;
-  if (draft) {
-    main.innerHTML = `${head}
-      <div class="draft"><b>Drafted ${esc(fmt(draft.createdAt))}</b>${esc(draft.text)}</div>
-      <label>Follow up again in<select id="days">${dayOpts(draft.cadence)}</select></label>
-      <button class="li" id="sent">Mark as sent</button>
-      <button class="link" id="other">I sent something different</button>`;
-    $('sent').onclick = e => busy(e.target, async () => {
-      const r = await post('/log-person', { id: p.id, note: '', days: Number($('days').value), linkedin: p.linkedinMissing ? (page.profileUrl || page.url) : '' });
-      done('Logged as sent', `Next nudge ${fmt(r.next)}`);
-    });
-    $('other').onclick = () => personForms(p, page, head, 'sent');
-    return;
-  }
-  personForms(p, page, head, p.state === 'waiting' ? 'reply' : 'sent');
+// ---------- a person already in the vault: draft, confirm, log ----------
+const KIND_LABEL = { first: 'Draft first message', followup: 'Draft follow-up', reply: 'Draft reply' };
+function head(p) {
+  return `<div class="who"><b>${esc(p.name)}</b><span class="muted">${esc([p.role, p.company].filter(Boolean).join(' · '))}</span></div>`;
 }
-function personForms(p, page, head, tab) {
-  const status = p.state === 'waiting' ? `Waiting on them · nudge ${fmt(p.next)}` : p.state === 'owe' ? 'They replied · your move' : p.lastOut ? `Last message ${fmt(p.lastOut)}` : 'Not contacted yet';
-  main.innerHTML = `${head}<div class="muted">${esc(status)}</div>
-    <div class="seg"><button data-tab="sent" aria-pressed="${tab === 'sent'}">I sent a message</button><button data-tab="reply" aria-pressed="${tab === 'reply'}">They replied</button></div>
+function statusLine(p) {
+  if (p.state === 'owe') return 'They replied · your move';
+  if (p.state === 'waiting') return p.due ? `Follow-up due ${fmt(p.next)}` : `Waiting on them · nudge ${fmt(p.next)}`;
+  return p.lastOut ? `Last message ${fmt(p.lastOut)}` : 'Not contacted yet';
+}
+const liField = (p, page) => (p.linkedinMissing ? (page.profileUrl || page.url) : '');
+
+function personView({ person: p, draft }, page, flash) {
+  $('kind').textContent = 'LinkedIn profile';
+  if (draft) return pendingView(p, draft, page, flash);
+  const tab = p.state === 'waiting' && !p.due ? 'reply' : 'draft';
+  personTabs(p, page, tab, flash);
+}
+
+// A saved draft: paste it, send it, come back and confirm.
+function pendingView(p, draft, page, flash) {
+  main.innerHTML = `${head(p)}
+    ${flash ? `<div class="ok">${esc(flash)}</div>` : ''}
+    <div class="draft"><b>Draft, not sent yet · ${esc(fmt(draft.createdAt))}</b>${esc(draft.text)}</div>
+    <div class="two"><button id="copy">Copy again</button><button id="edit">Edit or redraft</button></div>
+    <label>Follow up again in<select id="days">${dayOpts(draft.cadence)}</select></label>
+    <button class="li" id="sent">Mark as sent</button>
+    <button class="link" id="other">I sent something different</button>`;
+  $('copy').onclick = async e => { await navigator.clipboard.writeText(draft.text); e.target.textContent = 'Copied'; };
+  $('edit').onclick = () => personTabs(p, page, 'draft', '', draft);
+  $('sent').onclick = e => busy(e.target, async () => {
+    const r = await post('/log-person', { id: p.id, note: '', days: Number($('days').value), linkedin: liField(p, page) });
+    done('Logged as sent', `Next nudge ${fmt(r.next)}`);
+  });
+  $('other').onclick = () => personTabs(p, page, 'sent');
+}
+
+function personTabs(p, page, tab, flash, draft) {
+  main.innerHTML = `${head(p)}<div class="muted">${esc(statusLine(p))}</div>
+    ${flash ? `<div class="ok">${esc(flash)}</div>` : ''}
+    <div class="seg"><button data-tab="draft">Draft</button><button data-tab="sent">I sent one</button><button data-tab="reply">They replied</button></div>
     <div id="form"></div>`;
   const render = t => {
     main.querySelectorAll('[data-tab]').forEach(b => b.setAttribute('aria-pressed', b.dataset.tab === t));
+    if (t === 'draft') return composer(p, page, draft);
     if (t === 'sent') {
       $('form').innerHTML = `<label>What you sent (one line)<textarea id="note" placeholder="e.g. Following up on the deck"></textarea></label>
         <label>Follow up again in<select id="days">${dayOpts(p.cadence || 7)}</select></label><button class="li" id="go">Log message</button>`;
       $('go').onclick = e => busy(e.target, async () => {
         if (!$('note').value.trim()) throw new Error('Add a line about what you sent.');
-        const r = await post('/log-person', { id: p.id, note: $('note').value.trim(), days: Number($('days').value), linkedin: p.linkedinMissing ? (page.profileUrl || page.url) : '' });
+        const r = await post('/log-person', { id: p.id, note: $('note').value.trim(), days: Number($('days').value), linkedin: liField(p, page) });
         done('Message logged', `Next nudge ${fmt(r.next)}`);
       });
     } else {
@@ -116,31 +136,81 @@ function personForms(p, page, head, tab) {
   render(tab);
 }
 
-// ---------- someone new ----------
-function newPersonView({ guess, company }, page) {
+// Draft with Claude (or write it), then copy and keep it as a pending draft.
+function composer(p, page, draft) {
+  $('form').innerHTML = `
+    <div class="two-btn"><input id="ins" placeholder="Steer it (optional): e.g. mention their seed"><button class="primary" id="gen">✦ ${esc(KIND_LABEL[p.draftKind] || 'Draft')}</button></div>
+    <textarea id="text" class="big-text" placeholder="Claude writes it here in your voice, or type your own."></textarea>
+    <div id="hint" class="muted"></div>
+    <label>Follow up in<select id="days">${dayOpts((draft && draft.cadence) || p.cadence || 7)}</select></label>
+    <button class="li" id="copy">Copy & save draft</button>`;
+  if (draft) $('text').value = draft.text;
+  $('gen').onclick = async e => {
+    const btn = e.target, label = btn.textContent;
+    btn.disabled = true; btn.textContent = 'Drafting…';
+    $('hint').textContent = 'Usually about 10 seconds. It\'s saved as a draft when done, so you can close this.';
+    try {
+      const r = await post('/draft', { id: p.id, instructions: $('ins').value.trim(), days: Number($('days').value) });
+      $('text').value = r.text;
+      $('hint').textContent = 'Edit it if you like, then copy.';
+    } catch (err) { $('hint').innerHTML = `<span class="err">${esc(err.message)}</span>`; }
+    btn.disabled = false; btn.textContent = label;
+  };
+  $('copy').onclick = e => busy(e.target, async () => {
+    const text = $('text').value.trim();
+    if (!text) throw new Error('Draft something first.');
+    await navigator.clipboard.writeText(text);
+    const r = await post('/save-draft', { id: p.id, text, days: Number($('days').value) });
+    pendingView(p, r.draft, page, 'Copied. Paste it into LinkedIn and send it, then come back and click Mark as sent.');
+  });
+  (draft ? $('text') : $('ins')).focus();
+}
+
+// ---------- someone new: add them (and their company to Inbound), then draft ----------
+function guessCategory(g) {
+  return /(founder|ceo|cto)/i.test(g.role) ? 'founder' : /(partner|principal|ventures|capital)/i.test(g.role + g.company) ? 'vc' : 'other';
+}
+function newPersonView({ guess, company }, page, mode = 'reach') {
   $('kind').textContent = 'LinkedIn profile';
-  main.innerHTML = `
+  const cat = $('cat') ? $('cat').value : guessCategory(guess);
+  main.innerHTML = `<div class="muted">Not in your vault yet.</div>
+    <div class="seg"><button data-mode="reach" aria-pressed="${mode === 'reach'}">I want to reach out</button><button data-mode="sent" aria-pressed="${mode === 'sent'}">Already messaged</button></div>
     <div class="two"><label>Name<input id="name" value="${esc(guess.name)}"></label><label>Company<input id="co" value="${esc(guess.company)}"></label></div>
     <label>Role<input id="role" value="${esc(guess.role)}"></label>
-    <label>What you sent (one line)<textarea id="note" placeholder="e.g. Cold intro re: their launch, asked for 20 min"></textarea></label>
-    <div class="two"><label>Category<select id="cat">${CATS.map(([k, l]) => `<option value="${k}" ${k === (/(founder|ceo|cto)/i.test(guess.role) ? 'founder' : /(partner|principal|ventures|capital)/i.test(guess.role + guess.company) ? 'vc' : 'other') ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
-    <label>Follow up in<select id="days">${dayOpts(7)}</select></label></div>
+    ${mode === 'sent' ? '<label>What you sent (one line)<textarea id="note" placeholder="e.g. Cold intro re: their launch, asked for 20 min"></textarea></label>' : ''}
+    <div class="two"><label>Category<select id="cat">${CATS.map(([k, l]) => `<option value="${k}" ${k === cat ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+    <label>Follow up every<select id="days">${dayOpts(7)}</select></label></div>
     <div id="coLine"></div>
-    <button class="li" id="go">Log message</button>`;
+    <button class="li" id="go">${mode === 'reach' ? 'Add & draft a message' : 'Log message'}</button>`;
+  main.querySelectorAll('[data-mode]').forEach(b => { b.onclick = () => newPersonView({ guess: { ...guess, name: v('name'), company: v('co'), role: v('role') }, company }, page, b.dataset.mode); });
+  const as = mode === 'reach' ? 'Pursuing' : 'Reached out';
   const coLine = () => {
-    const co = $('co').value.trim();
-    if (company && co.toLowerCase() === (guess.company || '').toLowerCase()) $('coLine').innerHTML = `<div class="muted">${esc(company.name)} is already in ${company.kind === 'inbound' ? 'Inbound' : 'Companies'}.</div>`;
-    else $('coLine').innerHTML = co ? `<label class="check"><input type="checkbox" id="addCo" ${$('cat').value === 'founder' ? 'checked' : ''}> Also add ${esc(co)} to Inbound as Reached out</label>` : '';
+    const co = v('co');
+    const known = company && co.toLowerCase() === (guess.company || '').toLowerCase() ? company : null;
+    const on = $('cat').value === 'founder' ? 'checked' : '';
+    if (known && known.kind === 'company') $('coLine').innerHTML = `<div class="muted">${esc(known.name)} is already in Companies.</div>`;
+    else if (known) $('coLine').innerHTML = mode === 'reach'
+      ? `<label class="check"><input type="checkbox" id="addCo" ${on}> Add ${esc(v('name') || 'them')} to ${esc(known.name)}'s team in Inbound (${esc(known.status)})</label>`
+      : `<div class="muted">${esc(known.name)} is in Inbound (${esc(known.status)}); it moves to Reached out.</div>`;
+    else $('coLine').innerHTML = co ? `<label class="check"><input type="checkbox" id="addCo" ${on}> Add ${esc(co)} to Inbound as ${as}</label>` : '';
   };
   $('co').addEventListener('input', coLine); $('cat').addEventListener('change', coLine); coLine();
+  const body = () => ({ name: v('name'), role: v('role'), company: v('co'), linkedin: guess.linkedin || page.profileUrl || page.url,
+    category: $('cat').value, days: Number($('days').value), addCompany: !!($('addCo') && $('addCo').checked) });
   $('go').onclick = e => busy(e.target, async () => {
-    if (!$('name').value.trim()) throw new Error('Add their name.');
-    if (!$('note').value.trim()) throw new Error('Add a line about what you sent.');
-    const r = await post('/log-person', { name: $('name').value.trim(), role: $('role').value.trim(), company: $('co').value.trim(), linkedin: guess.linkedin || page.profileUrl || page.url,
-      category: $('cat').value, note: $('note').value.trim(), days: Number($('days').value), addCompany: !!($('addCo') && $('addCo').checked) });
-    done('Logged', `Added a page for ${$('name').value.trim()} · next nudge ${fmt(r.next)}`);
+    if (!v('name')) throw new Error('Add their name.');
+    if (mode === 'sent') {
+      if (!v('note')) throw new Error('Add a line about what you sent.');
+      const r = await post('/log-person', { ...body(), note: v('note') });
+      return done('Logged', `Added a page for ${v('name')} · next nudge ${fmt(r.next)}`);
+    }
+    const r = await post('/add-prospect', body());
+    const info = await post('/lookup', { url: guess.linkedin || page.profileUrl || page.url, name: v('name') });
+    if (info.kind !== 'person') return done('Added', v('name'));
+    const where = r.inbound ? ` · ${r.inbound.name} ${r.inbound.created ? 'added to' : 'is in'} Inbound as ${r.inbound.status}` : '';
+    personTabs(info.person, page, 'draft', `Added to your vault${where}.`);
   });
-  $('note').focus();
+  (mode === 'sent' ? $('note') : $('go')).focus();
 }
 
 // ---------- company websites ----------
@@ -151,7 +221,6 @@ function inboundFields(withName, guess) {
     <label>Note<input id="note" placeholder="One line on the ask"></label>
     ${withName ? '<label>Raise (optional)<input id="raise" placeholder="$3M seed"></label>' : ''}`;
 }
-const v = id => ($(id) ? $(id).value.trim() : '');
 function companyView({ match }, page) {
   $('kind').textContent = 'Company site';
   main.innerHTML = `<div class="who"><b>${esc(match.name)}</b><span class="muted">Already in ${match.kind === 'inbound' ? `Inbound · ${esc(match.status)}` : 'Companies'}</span></div>
@@ -174,7 +243,7 @@ function newCompanyView({ guess }) {
 }
 function unknownView() {
   $('kind').textContent = '';
-  main.innerHTML = `<div class="note">Open a <b>LinkedIn profile</b> to log a message or reply, or a <b>company's website</b> to add it to Inbound.</div>`;
+  main.innerHTML = `<div class="note">Open a <b>LinkedIn profile</b> to add someone you want to reach out to, draft a message, or log one. Open a <b>company's website</b> to add it to Inbound.</div>`;
 }
 
 run();

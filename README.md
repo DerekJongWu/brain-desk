@@ -38,11 +38,19 @@ the app running in the dock, so the Chrome button keeps working. Quit with ⌘Q.
 One-time setup: go to `chrome://extensions`, turn on **Developer mode**, click
 **Load unpacked**, choose `~/Desktop/brain-desk/extension`, then pin it.
 
-- **On a LinkedIn profile**, it does one of three things:
-  - **Mark as sent** for a pending draft.
-  - Logs a message you wrote directly on LinkedIn. For someone new, it can also
-    add their company to Inbound.
-  - Logs their reply.
+- **On the LinkedIn profile of someone new**: **I want to reach out** creates
+  their People page (follow-up due today) and adds their company to Inbound as
+  *Pursuing*, or adds them to the team if the company is already in Inbound.
+  It then opens the draft tab. **Already messaged** logs a message you've
+  already sent instead.
+- **On the profile of someone already in the vault**, it opens on drafting and
+  logging:
+  - **Draft**: Claude drafts in your voice. **Copy & save draft** keeps it as
+    *Drafted, not sent*.
+  - **Mark as sent**: once you've sent it, this logs it and sets the next
+    nudge. The company moves to *Reached out*.
+  - **I sent one** / **They replied**: log a message written straight in
+    LinkedIn, or log their reply.
 - **On a company website**, it adds the company to Inbound, or adds a touch if
   the company is already in the vault.
 
