@@ -41,6 +41,13 @@ the app running in the dock, so the Chrome button keeps working. Quit with ⌘Q.
   reply.
 - **Search** (`⌘K`): people, inbound and companies.
 
+**Met vs. not met.** People pages are only for people you've met. Outreach to
+anyone else lives on an Inbound note: their company's (created as Pursuing if
+missing), or `<Name> (Stealth)` for stealth founders, VCs, LPs and operators.
+They show in Follow-ups like everyone else, marked *not met*. **We met → People
+page** creates their page and moves the history onto it. If a meeting sync
+already made the page, the button offers to move the history instead.
+
 ## Chrome button
 
 One-time setup: go to `chrome://extensions`, turn on **Developer mode**, click

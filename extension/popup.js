@@ -86,7 +86,7 @@ async function busy(btn, fn) {
 // ---------- a person already in the vault: draft, confirm, log ----------
 const KIND_LABEL = { first: 'Draft first message', followup: 'Draft follow-up', reply: 'Draft reply' };
 function head(p) {
-  return `<div class="who"><b>${esc(p.name)}</b><span class="muted">${esc([p.role, p.company].filter(Boolean).join(' · '))}</span></div>`;
+  return `<div class="who"><b>${esc(p.name)}</b><span class="muted">${esc([p.role, p.company].filter(Boolean).join(' · '))}${p.where ? ` · tracked on ${esc(p.where)}` : ''}</span></div>`;
 }
 function statusLine(p) {
   if (p.state === 'owe') return 'They replied · your move';
@@ -219,35 +219,38 @@ function newPersonView({ guess, company, companies = [] }, page, mode = 'reach')
     <button class="li" id="go">${mode === 'reach' ? 'Add & draft a message' : 'Log message'}</button>`;
   main.querySelectorAll('[data-mode]').forEach(b => { b.onclick = () => newPersonView({ guess: { ...guess, name: v('name'), company: v('co'), role: v('role') }, company, companies }, page, b.dataset.mode); });
   const as = mode === 'reach' ? 'Pursuing' : 'Reached out';
+  // Where their outreach will be tracked: a People page only if Derek has met them.
   const coLine = () => {
-    const co = v('co');
-    const { exact, near } = matchCo(companies, co);
-    const on = $('cat').value === 'founder' ? 'checked' : '';
-    const who = esc(v('name') || 'them');
-    if (exact && exact.kind === 'company') $('coLine').innerHTML = `<div class="ok">✓ Matches ${esc(exact.name)} in Companies.</div>`;
-    else if (exact) $('coLine').innerHTML = mode === 'reach'
-      ? `<label class="check"><input type="checkbox" id="addCo" checked> ✓ Add ${who} to ${esc(exact.name)}'s team in Inbound (${esc(STATUS_TXT[exact.status] || exact.status)})</label>`
-      : `<div class="ok">✓ Matches ${esc(exact.name)} in Inbound (${esc(STATUS_TXT[exact.status] || exact.status)}). ${who} goes on its team${['new', 'pursuing'].includes(exact.status) ? ' and it moves to Reached out' : ''}.</div>`;
-    else if (near) $('coLine').innerHTML = `<div class="warn">Not in your vault. Did you mean <button class="link" id="fixCo">${esc(near.name)}</button>?</div>
-      <label class="check"><input type="checkbox" id="addCo"> No, add ${esc(co)} to Inbound as ${as}</label>`;
-    else $('coLine').innerHTML = co ? `<label class="check"><input type="checkbox" id="addCo" ${on}> Not in your vault: add ${esc(co)} to Inbound as ${as}</label>` : '';
+    const co = v('co'), name = v('name') || 'them';
+    const met = $('met') && $('met').checked;
+    const founder = $('cat').value === 'founder';
+    const { exact, near } = founder && co ? matchCo(companies, co) : {};
+    const st = c => esc(STATUS_TXT[c.status] || c.status);
+    let html;
+    if (met) html = `<div class="ok">Creates a People page for ${esc(name)}.</div>`;
+    else if (exact) html = `<div class="ok">✓ Tracked on ${esc(exact.name)} (${exact.kind === 'inbound' ? 'Inbound · ' + st(exact) : 'Companies'}), with ${esc(name)} on its team.</div>`;
+    else if (near) html = `<div class="warn">Not in your vault. Did you mean <button class="link" id="fixCo">${esc(near.name)}</button>? Otherwise ${esc(co)} is added to Inbound.</div>`;
+    else if (founder && co) html = `<div class="ok">Adds ${esc(co)} to Inbound (Pursuing) and tracks the outreach there.</div>`;
+    else html = `<div class="ok">Tracked on a new "${esc(name)} (Stealth)" Inbound note.</div>`;
+    $('coLine').innerHTML = html + `<label class="check"><input type="checkbox" id="met" ${met ? 'checked' : ''}> I've met them (People page instead)</label>`;
+    $('met').onchange = coLine;
     if ($('fixCo')) $('fixCo').onclick = () => { $('co').value = near.name; coLine(); };
   };
+  $('name').addEventListener('input', coLine);
   $('co').addEventListener('input', coLine); $('cat').addEventListener('change', coLine); coLine();
   const body = () => ({ name: v('name'), role: v('role'), company: v('co'), linkedin: guess.linkedin || page.profileUrl || page.url,
-    category: $('cat').value, days: Number($('days').value), addCompany: !!($('addCo') && $('addCo').checked) });
+    category: $('cat').value, days: Number($('days').value), met: !!($('met') && $('met').checked) });
   $('go').onclick = e => busy(e.target, async () => {
     if (!v('name')) throw new Error('Add their name.');
     if (mode === 'sent') {
       if (!v('note')) throw new Error('Add a line about what you sent.');
       const r = await post('/log-person', { ...body(), note: v('note') });
-      return done('Logged', `Added a page for ${v('name')} · next nudge ${fmt(r.next)}`);
+      return done('Logged', `${r.where ? 'Tracked on ' + r.where : 'People page added'} · next nudge ${fmt(r.next)}`);
     }
     const r = await post('/add-prospect', body());
     const info = await post('/lookup', { url: guess.linkedin || page.profileUrl || page.url, name: v('name') });
     if (info.kind !== 'person') return done('Added', v('name'));
-    const where = r.inbound ? ` · ${r.inbound.name} ${r.inbound.created ? 'added to' : 'is in'} Inbound as ${r.inbound.status}` : '';
-    personTabs(info.person, page, 'draft', `Added to your vault${where}.`);
+    personTabs(info.person, page, 'draft', r.where ? `Tracking on ${r.where}${r.inbound ? ' (Inbound · ' + (STATUS_TXT[r.inbound.status] || r.inbound.status) + ')' : ''}.` : 'People page added.');
   });
   (mode === 'sent' ? $('note') : $('go')).focus();
 }

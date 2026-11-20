@@ -64,6 +64,26 @@ const hook = file => {
   p = A.person(r.id); assert.equal(p.linkedin, 'https://www.linkedin.com/in/test-founder-123'); assert.equal(p.next, addDays(T, 7));
   const z = A.vault.load().inbound.find(x => x.name === 'Zzyzx Robotics'); assert(z && z.status === 'reached-out', 'company added as reached-out');
   assert.equal(A.lookup({ url: 'https://www.linkedin.com/in/test-founder-123' }).person.state, 'waiting');
+  // not met: no People page; tracked on the company's Inbound note
+  assert(!fs.existsSync(path.join(vault, 'People/Test Founder.md')), 'no People page before meeting');
+  assert.equal(r.id, z.id); assert.equal(p.unmet, true); assert.equal(p.log.length, 1);
+  const zt = fs.readFileSync(path.join(vault, z.id), 'utf8');
+  assert.match(zt, /^contact: Test Founder$/m); assert.match(zt, /## Outreach log\n\n- \d{4}-\d{2}-\d{2}, out · linkedin: Cold intro/);
+  assert(zt.indexOf('## Outreach log') < zt.indexOf('## Touches'));
+  assert.equal((zt.match(/Derek: /g) || []).length, 2, 'one setup touch + one message touch');
+  // a VC with no deal: "<Name> (Stealth)"
+  const vc = A.chromeLogPerson({ name: 'Vera Capital', role: 'Partner', company: 'Big Fund', linkedin: 'https://www.linkedin.com/in/vera-vc/', category: 'vc', note: 'Hi Vera', days: 14 });
+  assert.equal(vc.id, 'Inbound/Vera Capital (Stealth).md'); assert.equal(vc.where, 'Vera Capital (Stealth)');
+  assert.match(fs.readFileSync(path.join(vault, vc.id), 'utf8'), /^description: Outreach contact \(not a deal\) — VC · Partner at Big Fund$/m);
+  // we met: People page gets the history; the note loses the contact
+  const met = A.meet(vc.id);
+  assert.equal(met.id, 'People/Vera Capital.md');
+  const vp = A.person(met.id); assert.equal(vp.unmet, undefined); assert.equal(vp.log.length, 1); assert.equal(vp.category, 'vc'); assert.equal(vp.cadence, 14);
+  const vn = fs.readFileSync(path.join(vault, vc.id), 'utf8');
+  assert(!/^contact:/m.test(vn) && !vn.includes('## Outreach log') && !/^last_outbound:/m.test(vn)); assert.match(vn, /\[\[Vera Capital\]\]/);
+  touched.add(vc.id); touched.add(met.id); touched.add(z.id);
+  // a second founder at a company already tracking someone is refused
+  assert.throws(() => A.chromeLogPerson({ name: 'Other Founder', company: 'Zzyzx Robotics', category: 'founder', note: 'x', days: 7 }), /already tracks outreach/);
 
   // inbound: add, dedupe by domain and by name, status, deal sheet, start outreach
   const ib = A.addInbound({ name: 'Quokka Data', website: 'https://www.quokka-data.example/about', referred_by: 'Brightline - Sam: K', how: 'Email', note: 'raising soon', raise: '$3M seed' });

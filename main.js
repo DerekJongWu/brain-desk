@@ -67,7 +67,7 @@ function openExternal(url) {
 
 // Actions the window may call. Anything else is refused.
 const ALLOWED = ['draft', 'saveDraft', 'discardDraft', 'logSent', 'logReply', 'snooze', 'closeOut', 'setupOutreach',
-  'addPerson', 'addInbound', 'setInboundStatus', 'setDealSheet', 'setReachOut', 'editInbound', 'enrich', 'addTouch', 'startOutreach'];
+  'addPerson', 'addInbound', 'setInboundStatus', 'setDealSheet', 'setReachOut', 'editInbound', 'enrich', 'meet', 'addTouch', 'startOutreach'];
 
 ipcMain.handle('init', async () => {
   const cfg = readConfig();

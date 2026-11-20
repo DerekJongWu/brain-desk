@@ -74,7 +74,7 @@ function companyMatch(name, website) {
   const co = S.companies.find(hit); if (co) return { kind: 'company', rec: co };
   return null;
 }
-const linkedInbound = p => { if (!p.company) return null; const m = companyMatch(p.company, ''); return m && m.kind === 'inbound' ? m.rec : null; };
+const linkedInbound = p => { if (p.unmet) return p.noteKind === 'inbound' ? inboundById(p.id) : null; if (!p.company) return null; const m = companyMatch(p.company, ''); return m && m.kind === 'inbound' ? m.rec : null; };
 
 // ---------- plumbing ----------
 async function call(name, ...args) {
@@ -110,7 +110,7 @@ function setBadges() {
   $('b-today').textContent = (move + S.inbound.filter(reachDue).length) || '';
   $('b-follow').textContent = S.people.filter(p => ['drafted', 'owe', 'due', 'wait'].includes(pState(p))).length || '';
   $('b-inbound').textContent = S.inbound.filter(c => c.status === 'new').length || '';
-  $('b-people').textContent = S.people.length;
+  $('b-people').textContent = S.people.filter(p => !p.unmet).length;
   $('b-sheet').textContent = sheetRecs().filter(c => c.deal_sheet === 'yes').length || '';
 }
 function render() {
@@ -127,7 +127,7 @@ function render() {
 
 // ---------- rows ----------
 function prow(p, current) {
-  const sub = [p.role, p.company].filter(Boolean).join(' · ') || p.relationship || '';
+  const sub = p.unmet ? [p.role, p.company || p.noteName].filter(Boolean).join(' · ') + ' · not met' : [p.role, p.company].filter(Boolean).join(' · ') || p.relationship || '';
   const last = p.lastOut ? `${p.channel === 'email' ? 'Email' : 'LinkedIn'} · sent ${fmt(p.lastOut)}` : p.category ? CATS[p.category] : '';
   return `<li class="prow" data-person="${esc(p.id)}" tabindex="0" aria-current="${!!current}">${av(p.name)}
     <div class="who"><div class="n">${esc(p.name)}</div><div class="c">${esc(sub)}</div></div>
@@ -268,7 +268,10 @@ function detail(p) {
   const ctx = [p.relationship, p.location].filter(Boolean).join(' · ');
   return `<div class="detail">
     <div class="dhead">${av(p.name)}<div style="flex:1;min-width:0"><h3>${esc(p.name)}</h3><div class="small">${esc([p.role, p.company].filter(Boolean).join(' · '))}</div></div>${pPill(p)}</div>
-    ${ctx || ib ? `<p style="margin:0;color:var(--muted)">${esc(ctx)}${ib ? ` <button class="btn sm ghost" data-company="${esc(ib.id)}">${esc(ib.name)} ${statusPill(ib.status)}</button>` : ''}</p>` : ''}
+    ${p.unmet ? `<div class="metbox">${p.metPage
+      ? `<span><b>${esc(p.name)} has a People page now.</b> Move this outreach history from ${esc(p.noteName)} onto it?</span><button class="btn sm primary" data-act="meet">Move history</button>`
+      : `<span><b>Not met yet.</b> Tracked on ${p.noteKind === 'inbound' ? `<button class="btn sm ghost" style="padding:0 2px" data-company="${esc(p.id)}">${esc(p.noteName)}</button>` : esc(p.noteName)}, no People page until you meet.</span><button class="btn sm" data-act="meet" title="Create their People page and move this history onto it">We met → People page</button>`}</div>` : ''}
+    ${(ctx || ib) && !p.unmet ? `<p style="margin:0;color:var(--muted)">${esc(ctx)}${ib ? ` <button class="btn sm ghost" data-company="${esc(ib.id)}">${esc(ib.name)} ${statusPill(ib.status)}</button>` : ''}</p>` : ''}
     <div class="facts">
       <div><span>Category</span><b>${esc(CATS[p.category] || '—')}</b></div>
       <div><span>Channel</span><b>${p.channel ? (p.channel === 'email' ? 'Email' : 'LinkedIn') : '—'}</b></div>
@@ -405,10 +408,11 @@ function vSheet() {
 // ---------- People ----------
 function vPeople() {
   const q = peopleQ.toLowerCase();
-  const list = S.people.filter(p => (peopleCat === 'all' || (peopleCat === 'unset' ? !p.category : p.category === peopleCat)) &&
+  const met = S.people.filter(p => !p.unmet);
+  const list = met.filter(p => (peopleCat === 'all' || (peopleCat === 'unset' ? !p.category : p.category === peopleCat)) &&
     (!q || [p.name, p.role, p.company, p.relationship].join(' ').toLowerCase().includes(q)))
     .sort((a, b) => a.name.localeCompare(b.name));
-  const cats = [['all', 'All', S.people.length], ...Object.entries(CATS).map(([k, l]) => [k, l, S.people.filter(p => p.category === k).length]).filter(x => x[2]), ['unset', 'No category', S.people.filter(p => !p.category).length]];
+  const cats = [['all', 'All', met.length], ...Object.entries(CATS).map(([k, l]) => [k, l, met.filter(p => p.category === k).length]).filter(x => x[2]), ['unset', 'No category', met.filter(p => !p.category).length]];
   return `<div class="toolbar"><div class="tabs">${cats.map(([k, l, n]) => `<button data-pcat="${k}" aria-pressed="${peopleCat === k}">${l} <b>${n}</b></button>`).join('')}</div>
     <input class="in" id="peopleQ" placeholder="Filter people" value="${esc(peopleQ)}" style="width:200px">
     <button class="btn primary sm" style="margin-left:auto" data-act="qa-person">＋ Add person</button></div>
@@ -496,8 +500,9 @@ function openQuickAdd(mode = 'company', pre = {}) {
       <div class="f2"><label class="f">Category<select id="p-cat">${Object.entries(CATS).map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}</select></label>
       <label class="f">Follow up every<select id="p-d">${[3, 5, 7, 10, 14, 21, 30, 60].map(n => `<option ${n === 7 ? 'selected' : ''} value="${n}">${n} days</option>`).join('')}</select></label></div>
       <label class="f">What you sent (leave blank if you haven't reached out yet)<input id="p-note" placeholder="e.g. Cold intro re: their eval tooling launch"></label>
+      <label class="check"><input type="checkbox" id="p-met"> I've met them (creates a People page)</label>
     </div>
-    <div class="modal-f"><span class="small">Creates or updates their People/ note.</span><div class="actions"><button type="button" class="btn ghost" data-close="1">Cancel</button><button class="btn primary">Save</button></div></div>`;
+    <div class="modal-f"><span class="small" id="p-where">Not met: tracked on their company's Inbound note, or a "Name (Stealth)" note.</span><div class="actions"><button type="button" class="btn ghost" data-close="1">Cancel</button><button class="btn primary">Save</button></div></div>`;
   const reply = `
     <div class="modal-b">
       <label class="f">Who replied?<input id="r-q" placeholder="Start typing a name" autocomplete="off"></label>
@@ -520,8 +525,12 @@ function openQuickAdd(mode = 'company', pre = {}) {
     $('q-name').addEventListener('input', chk); $('q-web').addEventListener('input', chk); chk();
   }
   if (mode === 'person') {
-    const chk = () => { const n = $('p-name').value.trim().toLowerCase(); const p = n && S.people.find(x => x.name.toLowerCase() === n); $('pdupe').innerHTML = p ? `<div class="match"><span><b>${esc(p.name)}</b> already has a page. Saving updates it.</span></div>` : ''; };
-    $('p-name').addEventListener('input', chk); chk();
+    const chk = () => {
+      const n = $('p-name').value.trim().toLowerCase(); const p = n && S.people.find(x => x.name.toLowerCase() === n);
+      $('pdupe').innerHTML = p ? `<div class="match"><span><b>${esc(p.name)}</b> is already tracked${p.unmet ? ' on ' + esc(p.noteName) : ' (People page)'}. Saving updates it.</span></div>` : '';
+      $('p-where').textContent = $('p-met').checked ? 'Creates their People page.' : 'Not met: tracked on their company\'s Inbound note, or a "Name (Stealth)" note.';
+    };
+    $('p-name').addEventListener('input', chk); $('p-met').addEventListener('change', chk); chk();
   }
   if (mode === 'reply') {
     const pick = () => {
@@ -546,7 +555,7 @@ async function submitQuickAdd() {
   } else if (qa.mode === 'person') {
     if (!v('p-name')) return toast('Add their name', true);
     const contact = v('p-contact'), isEmail = /@/.test(contact) && !/linkedin\.com/i.test(contact);
-    const r = await call('addPerson', { name: v('p-name'), company: v('p-co'), role: v('p-role'), linkedin: isEmail ? '' : (contact ? (/^https?:/.test(contact) ? contact : 'https://' + contact) : ''), email: isEmail ? contact : '', category: v('p-cat'), channel: isEmail ? 'email' : 'linkedin', cadence: Number(v('p-d')), note: v('p-note') });
+    const r = await call('addPerson', { name: v('p-name'), company: v('p-co'), role: v('p-role'), linkedin: isEmail ? '' : (contact ? (/^https?:/.test(contact) ? contact : 'https://' + contact) : ''), email: isEmail ? contact : '', category: v('p-cat'), channel: isEmail ? 'email' : 'linkedin', cadence: Number(v('p-d')), note: v('p-note'), met: !!$('p-met')?.checked });
     closeLayer(); await refresh();
     fSel = r.id; const p = byId(r.id); fTab = pState(p) === 'wait' ? 'wait' : 'move'; go('follow');
     toast(v('p-note') ? `Logged. Next nudge ${fmt(p.next)}` : `${p.name} added. Reach out when ready.`);
@@ -650,6 +659,10 @@ async function onViewClick(e) {
     case 'mark-sent': { const body = ($('pendingBox')?.value || '').trim(); const r = await call('logSent', p.id, { text: body }); await refresh(); toast(`Logged as sent. Next nudge ${fmt(r.next)}`); break; }
     case 'discard': await call('discardDraft', p.id); await refresh(); toast('Draft discarded'); break;
     case 'close': await call('closeOut', p.id); await refresh(); toast(`${p.name} closed out`); break;
+    case 'meet': {
+      const r = await call('meet', p.id); fSel = r.id; await refresh();
+      toast(`${p.name} now has a People page`); break;
+    }
     case 'setup': {
       await call('setupOutreach', p.id, { category: $('su-cat').value, channel: $('su-ch').value, cadence: Number($('su-cad').value) });
       await refresh(); toast(`Tracking ${p.name}`); break;
