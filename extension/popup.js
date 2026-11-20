@@ -21,7 +21,17 @@ async function post(path, body) {
 function scrape() {
   const txt = el => (el && el.innerText || '').trim();
   const meta = n => document.querySelector(`meta[property="${n}"],meta[name="${n}"]`)?.content || '';
-  const out = { siteName: '', name: '', headline: '', profileUrl: '' };
+  const out = { siteName: '', name: '', headline: '', profileUrl: '', website: '' };
+  if (/linkedin\.com$/.test(location.hostname) && location.pathname.startsWith('/company/')) {
+    out.siteName = txt(document.querySelector('main h1, h1')) || document.title.replace(/^\(\d+\)\s*/, '').split('|')[0].trim();
+    // "Visit website" on the top card, or the Website row on the About tab
+    const ext = [...document.querySelectorAll('main a[href^="http"]')].map(a => a.href)
+      .map(h => { try { const u = new URL(h); return u.hostname.endsWith('linkedin.com') && u.searchParams.get('url') ? u.searchParams.get('url') : h; } catch (_) { return h; } })
+      .find(h => !/linkedin\.com|lnkd\.in|licdn\.com|bing\.com|microsoft\.com/i.test(h));
+    out.website = ext || '';
+    out.description = txt(document.querySelector('.org-top-card-summary__tagline, .org-top-card-summary-info-list__info-item'));
+    return out;
+  }
   if (/linkedin\.com$/.test(location.hostname)) {
     if (location.pathname.startsWith('/in/')) {
       out.name = txt(document.querySelector('main h1, h1'));
@@ -50,7 +60,7 @@ async function run() {
 
   let info;
   try {
-    info = await post('/lookup', { url: page.profileUrl || page.url, name: page.name, headline: page.headline, siteName: page.siteName });
+    info = await post('/lookup', { url: page.profileUrl || page.url, name: page.name, headline: page.headline, siteName: page.siteName, website: page.website, description: page.description });
   } catch (e) {
     main.innerHTML = /Failed to fetch|NetworkError/.test(e.message)
       ? `<div class="note"><b>Brain Desk isn't running.</b><br>Open the app (it can stay in the background with its window closed), then click this button again.</div>`
@@ -213,37 +223,49 @@ function newPersonView({ guess, company }, page, mode = 'reach') {
   (mode === 'sent' ? $('note') : $('go')).focus();
 }
 
-// ---------- company websites ----------
-function inboundFields(withName, guess) {
-  return `${withName ? `<div class="two"><label>Company<input id="name" value="${esc(guess.name)}"></label><label>Website<input id="web" value="${esc(guess.website.replace(/^https?:\/\/(www\.)?/, '').split('/')[0])}"></label></div>` : ''}
-    <div class="two"><label>Referred by<input id="ref" placeholder="Firm - Person"></label>
-    <label>How<select id="how"><option>Email</option><option>Text</option><option>Intro</option><option>Event</option><option>Told to track</option><option>Outbound</option></select></label></div>
-    <label>Note<input id="note" placeholder="One line on the ask"></label>
+// ---------- companies: websites and LinkedIn company pages ----------
+const STATUS_OPTS = [['new', 'New (just track it)'], ['pursuing', 'Pursuing (want to reach out)']];
+const HOWS = ['Outbound', 'Email', 'Text', 'Intro', 'Event', 'Told to track'];
+const isLiCompany = page => /linkedin\.com\/company\//i.test(page.url);
+function inboundFields(withName, guess, page) {
+  const how = isLiCompany(page) ? 'Outbound' : 'Email';
+  return `${withName ? `<div class="two"><label>Company<input id="name" value="${esc(guess.name)}"></label><label>Website<input id="web" value="${esc((guess.website || '').replace(/^https?:\/\/(www\.)?/, '').split('/')[0])}" placeholder="acme.com"></label></div>` : ''}
+    <div class="two"><label>Referred by<input id="ref" placeholder="Firm - Person, or blank"></label>
+    <label>How<select id="how">${HOWS.map(h => `<option ${h === how ? 'selected' : ''}>${h}</option>`).join('')}</select></label></div>
+    <label>Note<input id="note" placeholder="One line: why it's interesting, or the ask"></label>
     ${withName ? '<label>Raise (optional)<input id="raise" placeholder="$3M seed"></label>' : ''}`;
 }
 function companyView({ match }, page) {
-  $('kind').textContent = 'Company site';
-  main.innerHTML = `<div class="who"><b>${esc(match.name)}</b><span class="muted">Already in ${match.kind === 'inbound' ? `Inbound · ${esc(match.status)}` : 'Companies'}</span></div>
+  $('kind').textContent = isLiCompany(page) ? 'LinkedIn company' : 'Company site';
+  const inInbound = match.kind === 'inbound';
+  main.innerHTML = `<div class="who"><b>${esc(match.name)}</b><span class="muted">Already in ${inInbound ? `Inbound · ${esc(match.status)}` : 'Companies'}</span></div>
     ${match.description ? `<div class="note">${esc(match.description)}</div>` : ''}
-    ${inboundFields(false)}<button class="primary" id="go">Add touch</button>`;
+    ${inInbound && ['new', 'no-reply', 'passed'].includes(match.status) ? `<label class="check"><input type="checkbox" id="pursue" ${match.status === 'new' ? 'checked' : ''}> Move to Pursuing (I want to reach out)</label>` : ''}
+    ${inboundFields(false, {}, page)}<button class="primary" id="go">Add touch</button>
+    ${inInbound ? '<div class="muted">To reach out to a founder, open their LinkedIn profile and click Brain Desk there.</div>' : ''}`;
   $('go').onclick = e => busy(e.target, async () => {
-    await post('/add-inbound', { name: match.name, website: page.url, referred_by: v('ref'), how: v('how'), note: v('note') });
-    done('Touch added', `${match.name} · ${match.kind === 'inbound' ? 'Inbound' : 'Companies'}`);
+    const pursue = $('pursue') && $('pursue').checked;
+    await post('/add-inbound', { name: match.name, website: page.website || (isLiCompany(page) ? '' : page.url), referred_by: v('ref'), how: v('how'), note: v('note'), setStatus: pursue ? 'pursuing' : '' });
+    done(pursue ? 'Moved to Pursuing' : 'Touch added', `${match.name} · ${inInbound ? 'Inbound' : 'Companies'}`);
   });
 }
-function newCompanyView({ guess }) {
-  $('kind').textContent = 'Company site';
-  main.innerHTML = `<div class="muted">Not in your vault yet.</div>${inboundFields(true, guess)}<button class="primary" id="go">Add to Inbound</button>`;
+function newCompanyView({ guess }, page) {
+  $('kind').textContent = isLiCompany(page) ? 'LinkedIn company' : 'Company site';
+  main.innerHTML = `<div class="muted">Not in your vault yet.</div>
+    ${guess.description ? `<div class="note">${esc(guess.description)}</div>` : ''}
+    ${inboundFields(true, guess, page)}
+    <label>Status<select id="status">${STATUS_OPTS.map(([k, l]) => `<option value="${k}" ${k === (isLiCompany(page) ? 'pursuing' : 'new') ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+    <button class="primary" id="go">Add to Inbound</button>`;
   $('go').onclick = e => busy(e.target, async () => {
     if (!v('name')) throw new Error('Add the company name.');
-    await post('/add-inbound', { name: v('name'), website: v('web'), referred_by: v('ref'), how: v('how'), note: v('note'), raise: v('raise') });
-    done('Added to Inbound', v('name'));
+    await post('/add-inbound', { name: v('name'), website: v('web'), referred_by: v('ref'), how: v('how'), note: v('note'), raise: v('raise'), status: $('status').value });
+    done('Added to Inbound', `${v('name')} · ${$('status').value === 'pursuing' ? 'Pursuing' : 'New'}`);
   });
-  $('ref').focus();
+  (v('name') ? $('note') : $('name')).focus();
 }
 function unknownView() {
   $('kind').textContent = '';
-  main.innerHTML = `<div class="note">Open a <b>LinkedIn profile</b> to add someone you want to reach out to, draft a message, or log one. Open a <b>company's website</b> to add it to Inbound.</div>`;
+  main.innerHTML = `<div class="note">Open a <b>LinkedIn profile</b> to add someone you want to reach out to, draft a message, or log one. Open a <b>company's website</b> or <b>LinkedIn company page</b> to add it to Inbound.</div>`;
 }
 
 run();

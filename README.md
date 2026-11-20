@@ -51,8 +51,11 @@ One-time setup: go to `chrome://extensions`, turn on **Developer mode**, click
     nudge. The company moves to *Reached out*.
   - **I sent one** / **They replied**: log a message written straight in
     LinkedIn, or log their reply.
-- **On a company website**, it adds the company to Inbound, or adds a touch if
-  the company is already in the vault.
+- **On a company website or a LinkedIn company page**, it adds the company to
+  Inbound as *New* or *Pursuing* (want to reach out). LinkedIn company pages
+  default to Pursuing, and the website is read from the page. If the company is
+  already in the vault, it adds a touch instead, and can move a *New* company
+  to *Pursuing*.
 
 The button talks to the app on `127.0.0.1:47817`, so Brain Desk has to be
 running. Requests from ordinary web pages are refused.

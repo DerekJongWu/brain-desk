@@ -70,8 +70,25 @@ const req = (p, body, origin) => fetch(`http://127.0.0.1:${PORT}${p}`, { method:
     const again = await req('/add-prospect', { name: 'Riley Cofounder', role: 'CTO', company: newOne.name, linkedin: 'https://www.linkedin.com/in/riley-co/', addCompany: true }, ext);
     assert.equal(fs.readFileSync(path.join(vault, newOne.id), 'utf8').split('Riley Cofounder (').length, 2, 'no duplicate team line'); assert.equal(again.status, 200);
   }
+  // LinkedIn company pages: new company goes in as Pursuing; an existing one is matched by website
+  r = await req('/lookup', { url: 'https://www.linkedin.com/company/tidewater-labs/', siteName: 'Tidewater Labs', website: 'https://tidewater.example/' }, ext);
+  assert.equal(r.j.kind, 'new-company'); assert.equal(r.j.guess.website, 'https://tidewater.example/');
+  assert.equal((await req('/lookup', { url: 'https://www.linkedin.com/company/x/', siteName: '' }, ext)).j.kind, 'unknown');
+  r = await req('/add-inbound', { name: 'Tidewater Labs', website: 'tidewater.example', how: 'Outbound', note: 'agent security, saw their launch', status: 'pursuing' }, ext);
+  assert.equal(r.j.existed, null);
+  const tw = fs.readFileSync(path.join(vault, 'Inbound/Tidewater Labs.md'), 'utf8');
+  assert.match(tw, /^status: pursuing$/m); assert.match(tw, /Derek: found it — agent security, saw their launch/);
+  r = await req('/lookup', { url: 'https://www.linkedin.com/company/tidewater/', siteName: 'Tidewater', website: 'https://www.tidewater.example/about' }, ext);
+  assert.equal(r.j.kind, 'company'); assert.equal(r.j.match.name, 'Tidewater Labs');
+  assert.equal((await req('/add-inbound', { name: 'Bad', status: 'maybe' }, ext)).status, 400, 'bad status refused');
+  // existing New company -> Pursuing via setStatus
+  const nw = A.vault.load().inbound.find(c => c.status === 'new');
+  if (nw) {
+    await req('/add-inbound', { name: nw.name, how: 'Outbound', note: 'want to reach out', setStatus: 'pursuing' }, ext);
+    assert.match(fs.readFileSync(path.join(vault, nw.id), 'utf8'), /^status: pursuing$/m);
+  }
   const hook = path.join(SRC, '.claude/hooks/check-vocab.sh');
-  for (const f of ['Inbound/Quiet Harbor.md', sam.id, ...(newOne ? [newOne.id] : [])]) {
+  for (const f of ['Inbound/Tidewater Labs.md', 'Inbound/Quiet Harbor.md', sam.id, ...(newOne ? [newOne.id] : [])]) {
     const out = require('child_process').spawnSync('bash', [hook], { input: JSON.stringify({ tool_input: { file_path: path.join(vault, f) } }), encoding: 'utf8' });
     assert.equal(out.status, 0, f + ' fails vocab hook: ' + out.stderr);
   }
