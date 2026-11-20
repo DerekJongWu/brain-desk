@@ -129,7 +129,8 @@ function vToday() {
   const drafted = S.people.filter(p => pState(p) === 'drafted');
   const owe = S.people.filter(p => pState(p) === 'owe');
   const due = S.people.filter(p => pState(p) === 'due').sort((a, b) => a.next.localeCompare(b.next));
-  const nw = S.inbound.filter(c => c.status === 'new').sort((a, b) => (b.first_seen || '').localeCompare(a.first_seen || ''));
+  // newest added first: first_seen is a date, so same-day ties go to when the note was created
+  const nw = S.inbound.filter(c => c.status === 'new').sort((a, b) => (b.first_seen || '').localeCompare(a.first_seen || '') || (b.added || 0) - (a.added || 0));
   const raising = S.inbound.filter(c => c.round_status === 'raising' && !['passed', 'no-reply'].includes(c.status));
   const hour = new Date().getHours();
   const greet = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
